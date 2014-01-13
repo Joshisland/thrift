@@ -352,6 +352,7 @@ func (p *TCompactProtocol) ReadStructBegin() (name string, err error) {
 func (p *TCompactProtocol) ReadStructEnd() error {
 	// consume the last field we read off the wire.
 	p.lastFieldId = p.lastField[len(p.lastField)-1]
+	p.lastField = p.lastField[:len(p.lastField)-1]
 	return nil
 }
 
@@ -719,8 +720,7 @@ func (p *TCompactProtocol) getTType(t tCompactType) (TType, error) {
 	switch byte(t) & 0x0f {
 	case STOP:
 		return STOP, nil
-	case COMPACT_BOOLEAN_FALSE:
-	case COMPACT_BOOLEAN_TRUE:
+	case COMPACT_BOOLEAN_FALSE, COMPACT_BOOLEAN_TRUE:
 		return BOOL, nil
 	case COMPACT_BYTE:
 		return BYTE, nil

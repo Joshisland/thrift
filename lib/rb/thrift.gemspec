@@ -3,7 +3,7 @@ $:.push File.expand_path("../lib", __FILE__)
 
 Gem::Specification.new do |s|
   s.name        = 'thrift'
-  s.version     = '0.9.0.1'
+  s.version     = '1.0.0.0'
   s.authors     = ['Thrift Developers']
   s.email       = ['dev@thrift.apache.org']
   s.homepage    = 'http://thrift.apache.org'
@@ -23,7 +23,7 @@ Gem::Specification.new do |s|
   s.test_files = Dir.glob("{test,spec,benchmark}/**/*")
   s.executables =  Dir.glob("{bin}/**/*")
 
-  s.extra_rdoc_files  = %w[CHANGELOG README] + Dir.glob("{ext,lib}/**/*.{c,h,rb}")
+  s.extra_rdoc_files  = %w[README] + Dir.glob("{ext,lib}/**/*.{c,h,rb}")
 
   s.require_paths = %w[lib ext]
 

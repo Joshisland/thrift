@@ -603,13 +603,12 @@ void t_delphi_generator::generate_typedef(t_typedef* ttypedef) {
   indent(s_struct) << 
     type_name(ttypedef) << " = ";
 
-  bool container = type->is_list() || type->is_map() || type->is_set();
-
   // commented out: the benefit is not big enough to risk breaking existing code
+  //bool container = type->is_list() || type->is_map() || type->is_set();
   //if( ! container)
   //  s_struct << "type ";  //the "type A = type B" syntax leads to E2574 with generics
 
-  s_struct << type_name(ttypedef->get_type(), ! container) << ";" << endl <<
+  s_struct << type_name(ttypedef->get_type()) << ";" << endl <<
     endl;
   indent_down();
   
@@ -3165,12 +3164,22 @@ void t_delphi_generator::generate_delphi_struct_tostring_impl(ostream& out, stri
     cls_nm = type_name(tstruct,true,false);
   }
 
-  string tmp_sb = "sb";
+  string tmp_sb = "__sb";
+  string tmp_first = "__first";
+  bool useFirstFlag = false;
 
   indent_impl(out) << "function " << cls_prefix << cls_nm << ".ToString: string;" << endl;
   indent_impl(out) << "var" << endl;
   indent_up_impl();
   indent_impl(out) << tmp_sb << " : TThriftStringBuilder;" << endl;
+  for (f_iter = fields.begin(); f_iter != fields.end(); ++f_iter) {
+    bool is_optional  = ((*f_iter)->get_req() != t_field::T_REQUIRED);
+    if( is_optional) {
+      indent_impl(out) << tmp_first << " : Boolean;" << endl;
+      useFirstFlag = true;
+    }
+    break;
+  }
   indent_down_impl();
   indent_impl(out) << "begin" << endl;
   indent_up_impl();
@@ -3179,17 +3188,42 @@ void t_delphi_generator::generate_delphi_struct_tostring_impl(ostream& out, stri
   indent_impl(out) << "try" << endl;
   indent_up_impl();
 
-  bool first = true;
-
+  if( useFirstFlag) {
+    indent_impl(out) << tmp_first << " := TRUE;" << endl;
+  }
+  
+  bool had_required = false;  // set to true after first required field has been processed
+  
   for (f_iter = fields.begin(); f_iter != fields.end(); ++f_iter) {
-    if (first) {
-      first = false;
+    bool null_allowed = type_can_be_null((*f_iter)->get_type());
+    bool is_optional  = ((*f_iter)->get_req() != t_field::T_REQUIRED);
+    if (null_allowed) {
+      indent_impl(out) << "if (" << prop_name((*f_iter), is_exception) << " <> nil)";
+      if (is_optional) {
+        out << " and __isset_" << prop_name(*f_iter,is_exception);
+      }
+      out << " then begin" << endl;
+      indent_up_impl();
+    } else {
+      if (is_optional) {
+        indent_impl(out) << "if (__isset_" << prop_name(*f_iter,is_exception) << ") then begin" << endl;
+        indent_up_impl();
+      }
+    }
+
+    if( useFirstFlag && (! had_required)) {
+      indent_impl(out) << "if not " << tmp_first << " then " << tmp_sb << ".Append(',');" << endl;
+      if (is_optional) {
+        indent_impl(out) << tmp_first << " := FALSE;" << endl;
+      }
       indent_impl(out) <<
         tmp_sb << ".Append('" << prop_name((*f_iter), is_exception) << ": ');" << endl;
     } else {
       indent_impl(out) <<
-        tmp_sb << ".Append('," << prop_name((*f_iter), is_exception) << ": ');" << endl;
+        tmp_sb << ".Append(', " << prop_name((*f_iter), is_exception) << ": ');" << endl;
     }
+
+
     t_type* ttype = (*f_iter)->get_type();
     if (ttype->is_xception() || ttype->is_struct()) {
       indent_impl(out) <<
@@ -3201,12 +3235,25 @@ void t_delphi_generator::generate_delphi_struct_tostring_impl(ostream& out, stri
       indent_impl(out) <<
         tmp_sb << ".Append(" << prop_name((*f_iter), is_exception)  << ");" << endl;
     }
+    
+    if (null_allowed || is_optional) {
+      indent_down_impl();
+      indent_impl(out) << "end;" << endl;
+    } 
+    
+    if (!is_optional) {
+      had_required = true;  // now __first must be false, so we don't need to check it anymore
+    }
   }
 
   indent_impl(out) <<
     tmp_sb << ".Append(')');" << endl;
   indent_impl(out) <<
     "Result := " << tmp_sb <<  ".ToString;" << endl;
+  if( useFirstFlag) {
+    indent_impl(out) <<
+      "if " << tmp_first <<  " then {prevent warning};" << endl;
+  }
 
   indent_down_impl();
   indent_impl(out) << "finally" << endl;
