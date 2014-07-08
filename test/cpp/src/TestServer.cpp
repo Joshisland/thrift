@@ -23,6 +23,7 @@
 #include <thrift/concurrency/ThreadManager.h>
 #include <thrift/concurrency/PlatformThreadFactory.h>
 #include <thrift/protocol/TBinaryProtocol.h>
+#include <thrift/protocol/TCompactProtocol.h>
 #include <thrift/protocol/TJSONProtocol.h>
 #include <thrift/server/TSimpleServer.h>
 #include <thrift/server/TThreadedServer.h>
@@ -44,6 +45,7 @@
 #include <sstream>
 
 #include <boost/program_options.hpp>
+#include <thrift/cxxfunctional.h>
 
 #include <signal.h>
 #if _WIN32
@@ -85,7 +87,7 @@ class TestHandler : public ThriftTestIf {
   }
 
   int64_t testI64(const int64_t thing) {
-    printf("testI64(%"PRId64")\n", thing);
+    printf("testI64(%" PRId64 ")\n", thing);
     return thing;
   }
 
@@ -95,13 +97,13 @@ class TestHandler : public ThriftTestIf {
   }
 
   void testStruct(Xtruct& out, const Xtruct &thing) {
-    printf("testStruct({\"%s\", %d, %d, %"PRId64"})\n", thing.string_thing.c_str(), (int)thing.byte_thing, thing.i32_thing, thing.i64_thing);
+    printf("testStruct({\"%s\", %d, %d, %" PRId64 "})\n", thing.string_thing.c_str(), (int)thing.byte_thing, thing.i32_thing, thing.i64_thing);
     out = thing;
   }
 
   void testNest(Xtruct2& out, const Xtruct2& nest) {
     const Xtruct &thing = nest.struct_thing;
-    printf("testNest({%d, {\"%s\", %d, %d, %"PRId64"}, %d})\n", (int)nest.byte_thing, thing.string_thing.c_str(), (int)thing.byte_thing, thing.i32_thing, thing.i64_thing, nest.i32_thing);
+    printf("testNest({%d, {\"%s\", %d, %d, %" PRId64 "}, %d})\n", (int)nest.byte_thing, thing.string_thing.c_str(), (int)thing.byte_thing, thing.i32_thing, thing.i64_thing, nest.i32_thing);
     out = nest;
   }
 
@@ -175,7 +177,7 @@ class TestHandler : public ThriftTestIf {
   }
 
   UserId testTypedef(const UserId thing) {
-    printf("testTypedef(%"PRId64")\n", thing);
+    printf("testTypedef(%" PRId64 ")\n", thing);
     return thing;
   }
 
@@ -233,7 +235,7 @@ class TestHandler : public ThriftTestIf {
     printf(" = {");
     map<UserId, map<Numberz::type,Insanity> >::const_iterator i_iter;
     for (i_iter = insane.begin(); i_iter != insane.end(); ++i_iter) {
-      printf("%"PRId64" => {", i_iter->first);
+      printf("%" PRId64 " => {", i_iter->first);
       map<Numberz::type,Insanity>::const_iterator i2_iter;
       for (i2_iter = i_iter->second.begin();
            i2_iter != i_iter->second.end();
@@ -243,7 +245,7 @@ class TestHandler : public ThriftTestIf {
         map<Numberz::type, UserId>::const_iterator um;
         printf("{");
         for (um = userMap.begin(); um != userMap.end(); ++um) {
-          printf("%d => %"PRId64", ", um->first, um->second);
+          printf("%d => %" PRId64 ", ", um->first, um->second);
         }
         printf("}, ");
 
@@ -251,7 +253,7 @@ class TestHandler : public ThriftTestIf {
         vector<Xtruct>::const_iterator x;
         printf("{");
         for (x = xtructs.begin(); x != xtructs.end(); ++x) {
-          printf("{\"%s\", %d, %d, %"PRId64"}, ", x->string_thing.c_str(), (int)x->byte_thing, x->i32_thing, x->i64_thing);
+          printf("{\"%s\", %d, %d, %" PRId64 "}, ", x->string_thing.c_str(), (int)x->byte_thing, x->i32_thing, x->i64_thing);
         }
         printf("}");
 
@@ -365,102 +367,102 @@ public:
   TestHandlerAsync(boost::shared_ptr<TestHandler>& handler) : _delegate(handler) {}
   virtual ~TestHandlerAsync() {}
 
-  virtual void testVoid(std::tr1::function<void()> cob) {
+  virtual void testVoid(tcxx::function<void()> cob) {
     _delegate->testVoid();
     cob();
   }
 
-  virtual void testString(std::tr1::function<void(std::string const& _return)> cob, const std::string& thing) {
+  virtual void testString(tcxx::function<void(std::string const& _return)> cob, const std::string& thing) {
     std::string res;
     _delegate->testString(res, thing);
     cob(res);
   }
 
-  virtual void testByte(std::tr1::function<void(int8_t const& _return)> cob, const int8_t thing) {
+  virtual void testByte(tcxx::function<void(int8_t const& _return)> cob, const int8_t thing) {
     int8_t res = _delegate->testByte(thing);
     cob(res);
   }
 
-  virtual void testI32(std::tr1::function<void(int32_t const& _return)> cob, const int32_t thing) {
+  virtual void testI32(tcxx::function<void(int32_t const& _return)> cob, const int32_t thing) {
     int32_t res = _delegate->testI32(thing);
     cob(res);
   }
 
-  virtual void testI64(std::tr1::function<void(int64_t const& _return)> cob, const int64_t thing) {
+  virtual void testI64(tcxx::function<void(int64_t const& _return)> cob, const int64_t thing) {
     int64_t res = _delegate->testI64(thing);
     cob(res);
   }
 
-  virtual void testDouble(std::tr1::function<void(double const& _return)> cob, const double thing) {
+  virtual void testDouble(tcxx::function<void(double const& _return)> cob, const double thing) {
     double res = _delegate->testDouble(thing);
     cob(res);
   }
 
-  virtual void testStruct(std::tr1::function<void(Xtruct const& _return)> cob, const Xtruct& thing) {
+  virtual void testStruct(tcxx::function<void(Xtruct const& _return)> cob, const Xtruct& thing) {
     Xtruct res;
     _delegate->testStruct(res, thing);
     cob(res);
   }
 
-  virtual void testNest(std::tr1::function<void(Xtruct2 const& _return)> cob, const Xtruct2& thing) {
+  virtual void testNest(tcxx::function<void(Xtruct2 const& _return)> cob, const Xtruct2& thing) {
     Xtruct2 res;
     _delegate->testNest(res, thing);
     cob(res);
   }
 
-  virtual void testMap(std::tr1::function<void(std::map<int32_t, int32_t>  const& _return)> cob, const std::map<int32_t, int32_t> & thing) {
+  virtual void testMap(tcxx::function<void(std::map<int32_t, int32_t>  const& _return)> cob, const std::map<int32_t, int32_t> & thing) {
     std::map<int32_t, int32_t> res;
     _delegate->testMap(res, thing);
     cob(res);
   }
 
-  virtual void testStringMap(std::tr1::function<void(std::map<std::string, std::string>  const& _return)> cob, const std::map<std::string, std::string> & thing) {
+  virtual void testStringMap(tcxx::function<void(std::map<std::string, std::string>  const& _return)> cob, const std::map<std::string, std::string> & thing) {
     std::map<std::string, std::string> res;
     _delegate->testStringMap(res, thing);
     cob(res);
   }
 
-  virtual void testSet(std::tr1::function<void(std::set<int32_t>  const& _return)> cob, const std::set<int32_t> & thing) {
+  virtual void testSet(tcxx::function<void(std::set<int32_t>  const& _return)> cob, const std::set<int32_t> & thing) {
     std::set<int32_t> res;
     _delegate->testSet(res, thing);
     cob(res);
   }
 
-  virtual void testList(std::tr1::function<void(std::vector<int32_t>  const& _return)> cob, const std::vector<int32_t> & thing) {
+  virtual void testList(tcxx::function<void(std::vector<int32_t>  const& _return)> cob, const std::vector<int32_t> & thing) {
     std::vector<int32_t> res;
     _delegate->testList(res, thing);
     cob(res);
   }
 
-  virtual void testEnum(std::tr1::function<void(Numberz::type const& _return)> cob, const Numberz::type thing) {
+  virtual void testEnum(tcxx::function<void(Numberz::type const& _return)> cob, const Numberz::type thing) {
     Numberz::type res = _delegate->testEnum(thing);
     cob(res);
   }
 
-  virtual void testTypedef(std::tr1::function<void(UserId const& _return)> cob, const UserId thing) {
+  virtual void testTypedef(tcxx::function<void(UserId const& _return)> cob, const UserId thing) {
     UserId res = _delegate->testTypedef(thing);
     cob(res);
   }
 
-  virtual void testMapMap(std::tr1::function<void(std::map<int32_t, std::map<int32_t, int32_t> >  const& _return)> cob, const int32_t hello) {
+  virtual void testMapMap(tcxx::function<void(std::map<int32_t, std::map<int32_t, int32_t> >  const& _return)> cob, const int32_t hello) {
     std::map<int32_t, std::map<int32_t, int32_t> > res;
     _delegate->testMapMap(res, hello);
     cob(res);
   }
 
-  virtual void testInsanity(std::tr1::function<void(std::map<UserId, std::map<Numberz::type, Insanity> >  const& _return)> cob, const Insanity& argument) {
+  virtual void testInsanity(tcxx::function<void(std::map<UserId, std::map<Numberz::type, Insanity> >  const& _return)> cob, const Insanity& argument) {
     std::map<UserId, std::map<Numberz::type, Insanity> > res;
     _delegate->testInsanity(res, argument);
     cob(res);
  }
 
-  virtual void testMulti(std::tr1::function<void(Xtruct const& _return)> cob, const int8_t arg0, const int32_t arg1, const int64_t arg2, const std::map<int16_t, std::string> & arg3, const Numberz::type arg4, const UserId arg5) {
+  virtual void testMulti(tcxx::function<void(Xtruct const& _return)> cob, const int8_t arg0, const int32_t arg1, const int64_t arg2, const std::map<int16_t, std::string> & arg3, const Numberz::type arg4, const UserId arg5) {
     Xtruct res;
     _delegate->testMulti(res, arg0, arg1, arg2, arg3, arg4, arg5);
     cob(res);
   }
 
-  virtual void testException(std::tr1::function<void()> cob, std::tr1::function<void(::apache::thrift::TDelayedException* _throw)> exn_cob, const std::string& arg) {
+  virtual void testException(tcxx::function<void()> cob, tcxx::function<void(::apache::thrift::TDelayedException* _throw)> exn_cob, const std::string& arg) {
     try {
       _delegate->testException(arg);
     } catch(const apache::thrift::TException& e) {
@@ -470,7 +472,7 @@ public:
     cob();
   }
 
-  virtual void testMultiException(std::tr1::function<void(Xtruct const& _return)> cob, std::tr1::function<void(::apache::thrift::TDelayedException* _throw)> exn_cob, const std::string& arg0, const std::string& arg1) {
+  virtual void testMultiException(tcxx::function<void(Xtruct const& _return)> cob, tcxx::function<void(::apache::thrift::TDelayedException* _throw)> exn_cob, const std::string& arg0, const std::string& arg1) {
     Xtruct res;
     try {
       _delegate->testMultiException(res, arg0, arg1);
@@ -481,7 +483,7 @@ public:
     cob(res);
   }
 
-  virtual void testOneway(std::tr1::function<void()> cob, const int32_t secondsToSleep) {
+  virtual void testOneway(tcxx::function<void()> cob, const int32_t secondsToSleep) {
     _delegate->testOneway(secondsToSleep);
     cob();
   }
@@ -515,7 +517,7 @@ int main(int argc, char **argv) {
       ("transport", boost::program_options::value<string>(&transport_type)->default_value(transport_type),
         "transport: buffered, framed, http")
       ("protocol", boost::program_options::value<string>(&protocol_type)->default_value(protocol_type),
-        "protocol: binary, json")
+        "protocol: binary, compact, json")
 	  ("ssl", "Encrypted Transport using SSL")
 	  ("processor-events", "processor-events")
       ("workers,n", boost::program_options::value<size_t>(&workers)->default_value(workers),
@@ -544,13 +546,14 @@ int main(int argc, char **argv) {
 
     if (!protocol_type.empty()) {
       if (protocol_type == "binary") {
+      } else if (protocol_type == "compact") {
       } else if (protocol_type == "json") {
       } else {
           throw invalid_argument("Unknown protocol type "+protocol_type);
       }
     }
 
-	if (!transport_type.empty()) {
+    if (!transport_type.empty()) {
       if (transport_type == "buffered") {
       } else if (transport_type == "framed") {
       } else if (transport_type == "http") {
@@ -574,6 +577,9 @@ int main(int argc, char **argv) {
   if (protocol_type == "json") {
     boost::shared_ptr<TProtocolFactory> jsonProtocolFactory(new TJSONProtocolFactory());
     protocolFactory = jsonProtocolFactory;
+  } else if (protocol_type == "compact") {
+    boost::shared_ptr<TProtocolFactory> compactProtocolFactory(new TCompactProtocolFactory());
+    protocolFactory = compactProtocolFactory;
   } else {
     boost::shared_ptr<TProtocolFactory> binaryProtocolFactory(new TBinaryProtocolFactoryT<TBufferBase>());
     protocolFactory = binaryProtocolFactory;
@@ -594,19 +600,18 @@ int main(int argc, char **argv) {
 
   if (ssl) {
     sslSocketFactory = boost::shared_ptr<TSSLSocketFactory>(new TSSLSocketFactory());
-    sslSocketFactory->loadCertificate("./server-certificate.pem");
-    sslSocketFactory->loadPrivateKey("./server-private-key.pem");
+    sslSocketFactory->loadCertificate("keys/server.crt");
+    sslSocketFactory->loadPrivateKey("keys/server.key");
     sslSocketFactory->ciphers("ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH");
     serverSocket = boost::shared_ptr<TServerSocket>(new TSSLServerSocket(port, sslSocketFactory));
   } else {
-	if (domain_socket != "") {
-	  unlink(domain_socket.c_str());
-	  serverSocket = boost::shared_ptr<TServerSocket>(new TServerSocket(domain_socket));
-	  port = 0;
-	}
-	else {
+    if (domain_socket != "") {
+      unlink(domain_socket.c_str());
+      serverSocket = boost::shared_ptr<TServerSocket>(new TServerSocket(domain_socket));
+      port = 0;
+    } else {
       serverSocket = boost::shared_ptr<TServerSocket>(new TServerSocket(port));
-	}
+    }
   }
 
   // Factory
@@ -686,8 +691,12 @@ int main(int argc, char **argv) {
     boost::shared_ptr<apache::thrift::concurrency::Thread> thread = factory.newThread(serverThreadRunner);
     thread->start();
 
-    cout<<"Press enter to stop the server."<<endl;
-    cin.ignore(); //wait until a key is pressed
+    // HACK: cross language test suite is unable to handle cin properly
+    //       that's why we stay in a endless loop here
+    while(1){}
+    // FIXME: find another way to stop the server (e.g. a signal)
+    // cout<<"Press enter to stop the server."<<endl;
+    // cin.ignore(); //wait until a key is pressed
 
     server->stop();
     thread->join();

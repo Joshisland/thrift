@@ -102,6 +102,7 @@ class t_php_generator : public t_oop_generator {
   void generate_typedef  (t_typedef*  ttypedef);
   void generate_enum     (t_enum*     tenum);
   void generate_const    (t_const*    tconst);
+  void generate_consts   (vector<t_const*> consts);
   void generate_struct   (t_struct*   tstruct);
   void generate_xception (t_struct*   txception);
   void generate_service  (t_service*  tservice);
@@ -186,6 +187,18 @@ class t_php_generator : public t_oop_generator {
                                           t_list*     tlist,
                                           std::string iter);
 
+  void generate_php_doc                  (std::ofstream& out,
+                                          t_doc*      tdoc);
+
+  void generate_php_doc                  (std::ofstream& out,
+                                          t_field*    tfield);
+
+  void generate_php_doc                  (std::ofstream& out,
+                                          t_function* tfunction);
+
+  void generate_php_docstring_comment    (std::ofstream &out,
+                                          string contents);
+
   /**
    * Helper rendering functions
    */
@@ -193,9 +206,10 @@ class t_php_generator : public t_oop_generator {
   std::string php_includes();
   std::string declare_field(t_field* tfield, bool init=false, bool obj=false);
   std::string function_signature(t_function* tfunction, std::string prefix="");
-  std::string argument_list(t_struct* tstruct, bool addStructSignature = true);
+  std::string argument_list(t_struct* tstruct, bool addTypeHints = true);
   std::string type_to_cast(t_type* ttype);
   std::string type_to_enum(t_type* ttype);
+  std::string type_to_phpdoc(t_type* ttype);
 
   std::string php_namespace_base(const t_program* p) {
     std::string ns = p->get_namespace("php");
@@ -440,12 +454,14 @@ void t_php_generator::generate_enum(t_enum* tenum) {
   // We're also doing it this way to see how it performs. It's more legible
   // code but you can't do things like an 'extract' on it, which is a bit of
   // a downer.
+  generate_php_doc(f_types_, tenum);
   f_types_ <<
     "final class " << tenum->get_name() << " {" << endl;
   indent_up();
 
   for (c_iter = constants.begin(); c_iter != constants.end(); ++c_iter) {
     int value = (*c_iter)->get_value();
+    generate_php_doc(f_types_, *c_iter);
     indent(f_types_) <<
       "const " << (*c_iter)->get_name() << " = " << value << ";" << endl;
   }
@@ -465,16 +481,57 @@ void t_php_generator::generate_enum(t_enum* tenum) {
 }
 
 /**
+ * Generate constant class
+ *
+ * Override the one from t_generator
+ */
+void t_php_generator::generate_consts(vector<t_const*> consts) {
+    vector<t_const*>::iterator c_iter;
+
+    // Create class only if needed
+    if(consts.size() > 0)
+    {
+        f_types_ << "final class Constant extends \\Thrift\\Type\\TConstant {" << endl;
+        indent_up();
+
+        // Create static property
+        for (c_iter = consts.begin(); c_iter != consts.end(); ++c_iter) {
+            string name = (*c_iter)->get_name();
+
+            indent(f_types_) << "static protected $" << name << ";" << endl;
+        }
+
+        // Create init function
+        for (c_iter = consts.begin(); c_iter != consts.end(); ++c_iter) {
+            string name = (*c_iter)->get_name();
+
+            f_types_ << endl;
+
+            indent(f_types_) << "static protected function init_" << name << "() {" << endl;
+            indent_up();
+
+            indent(f_types_) << "return ";
+            generate_const(*c_iter);
+            f_types_ << ";" << endl;
+
+            indent_down();
+            indent(f_types_) << "}" << endl;
+        }
+
+        indent_down();
+        f_types_ << "}" << endl << endl;
+    }
+}
+
+/**
  * Generate a constant value
  */
 void t_php_generator::generate_const(t_const* tconst) {
   t_type* type = tconst->get_type();
-  string name = tconst->get_name();
   t_const_value* value = tconst->get_value();
 
-  f_types_ << "$GLOBALS['" << program_name_ << "_CONSTANTS']['" << name << "'] = ";
+  generate_php_doc(f_types_, tconst);
   f_types_ << render_const_value(type, value);
-  f_types_ << ";" << endl << endl;
 }
 
 /**
@@ -690,6 +747,7 @@ void t_php_generator::generate_php_struct_definition(ofstream& out,
   const vector<t_field*>& members = tstruct->get_members();
   vector<t_field*>::const_iterator m_iter;
 
+  generate_php_doc(out, tstruct);
   out <<
     "class " << php_namespace_declaration(tstruct);
   if (is_exception) {
@@ -709,6 +767,7 @@ void t_php_generator::generate_php_struct_definition(ofstream& out,
     if ((*m_iter)->get_value() != NULL && !(t->is_struct() || t->is_xception())) {
       dval = render_const_value((*m_iter)->get_type(), (*m_iter)->get_value());
     }
+    generate_php_doc(out, *m_iter);
     indent(out) <<
       "public $" << (*m_iter)->get_name() << " = " << dval << ";" << endl;
   }
@@ -1304,12 +1363,14 @@ void t_php_generator::generate_service_interface(t_service* tservice) {
     extends = " extends " + php_namespace(tservice->get_extends()->get_program()) + tservice->get_extends()->get_name();
     extends_if = " extends " + php_namespace(tservice->get_extends()->get_program()) + tservice->get_extends()->get_name() + "If";
   }
+  generate_php_doc(f_service_, tservice);
   f_service_ <<
     "interface " << php_namespace_declaration(tservice) << "If" << extends_if << " {" << endl;
   indent_up();
   vector<t_function*> functions = tservice->get_functions();
   vector<t_function*>::iterator f_iter;
   for (f_iter = functions.begin(); f_iter != functions.end(); ++f_iter) {
+    generate_php_doc(f_service_, *f_iter);
     indent(f_service_) <<
       "public function " << function_signature(*f_iter) << ";" << endl;
   }
@@ -2205,6 +2266,93 @@ void t_php_generator::generate_serialize_list_element(ofstream &out,
 }
 
 /**
+ * Emits a PHPDoc comment for the given contents
+ */
+void t_php_generator::generate_php_docstring_comment(ofstream &out, string contents) {
+  generate_docstring_comment(out,
+                             "/**\n",
+                             " * ", contents,
+                             " */\n");
+}
+
+/**
+ * Emits a PHPDoc comment if the provided object has a doc in Thrift
+ */
+void t_php_generator::generate_php_doc(ofstream &out, t_doc* tdoc) {
+  if (tdoc->has_doc()) {
+    generate_php_docstring_comment(out, tdoc->get_doc());
+  }
+}
+
+/**
+ * Emits a PHPDoc comment for a field
+ */
+void t_php_generator::generate_php_doc(ofstream &out, t_field* field) {
+  stringstream ss;
+
+  // prepend free-style doc if available
+  if (field->has_doc()) {
+    ss << field->get_doc() << endl;
+  }
+
+  // append @var tag
+  t_type* type = get_true_type(field->get_type());
+  ss << "@var " << type_to_phpdoc(type) << endl;
+
+  generate_php_docstring_comment(out, ss.str());
+}
+
+/**
+ * Emits a PHPDoc comment for a function
+ */
+void t_php_generator::generate_php_doc(ofstream &out, t_function* function) {
+  stringstream ss;
+  if (function->has_doc()) {
+    ss << function->get_doc() << endl;
+  }
+
+  // generate parameter types doc
+  const vector<t_field*>& args = function->get_arglist()->get_members();
+  vector<t_field*>::const_iterator a_iter;
+  for (a_iter = args.begin(); a_iter != args.end(); ++a_iter) {
+    t_field* arg = *a_iter;
+    ss << "@param " << type_to_phpdoc(arg->get_type()) << " $" << arg->get_name();
+    if (arg->has_doc()) {
+      ss << " " << arg->get_doc();
+    }
+    ss << endl;
+  }
+
+  // generate return type doc
+  t_type* ret_type = function->get_returntype();
+  if (!ret_type->is_void() || ret_type->has_doc()) {
+    ss << "@return " << type_to_phpdoc(ret_type);
+    if (ret_type->has_doc()) {
+      ss << " " << ret_type->get_doc();
+    }
+    ss << endl;
+  }
+
+  // generate exceptions doc
+  const vector<t_field*>& excs = function->get_xceptions()->get_members();
+  vector<t_field*>::const_iterator e_iter;
+  for (e_iter = excs.begin(); e_iter != excs.end(); ++e_iter) {
+    t_field* exc = *e_iter;
+    ss << "@throws " << type_to_phpdoc(exc->get_type());
+    if (exc->has_doc()) {
+      ss << " " << exc->get_doc();
+    }
+    ss << endl;
+  }
+
+  generate_docstring_comment(out,
+                           "/**\n",
+                           " * ", ss.str(),
+                           " */\n");
+}
+
+
+/**
  * Declares a field, which may include initialization as necessary.
  *
  * @param ttype The type
@@ -2267,7 +2415,7 @@ string t_php_generator::function_signature(t_function* tfunction,
 /**
  * Renders a field list
  */
-string t_php_generator::argument_list(t_struct* tstruct, bool addStructSignature) {
+string t_php_generator::argument_list(t_struct* tstruct, bool addTypeHints) {
   string result = "";
 
   const vector<t_field*>& fields = tstruct->get_members();
@@ -2283,11 +2431,18 @@ string t_php_generator::argument_list(t_struct* tstruct, bool addStructSignature
     t_type* type = (*f_iter)->get_type();
 
     //Set type name
-    if(addStructSignature && type->is_struct())
+    if (addTypeHints)
     {
-      string className = php_namespace(type->get_program()) + php_namespace_directory("Definition", false) + classify(type->get_name());
+      if (type->is_struct())
+      {
+        string className = php_namespace(type->get_program()) + php_namespace_directory("Definition", false) + classify(type->get_name());
 
-      result += className + " ";
+        result += className + " ";
+      }
+      else if (type->is_container())
+      {
+        result += "array ";
+      }
     }
 
     result += "$" + (*f_iter)->get_name();
@@ -2358,6 +2513,59 @@ string t_php_generator ::type_to_enum(t_type* type) {
     return "TType::SET";
   } else if (type->is_list()) {
     return "TType::LST";
+  }
+
+  throw "INVALID TYPE IN type_to_enum: " + type->get_name();
+}
+
+/**
+ * Converts the parse type to a PHPDoc string for the given type.
+ */
+string t_php_generator ::type_to_phpdoc(t_type* type) {
+  type = get_true_type(type);
+
+  if (type->is_base_type()) {
+    t_base_type::t_base tbase = ((t_base_type*)type)->get_base();
+    switch (tbase) {
+    case t_base_type::TYPE_VOID:
+      return "void";
+    case t_base_type::TYPE_STRING:
+      return "string";
+    case t_base_type::TYPE_BOOL:
+      return "bool";
+    case t_base_type::TYPE_BYTE:
+      return "int";
+    case t_base_type::TYPE_I16:
+      return "int";
+    case t_base_type::TYPE_I32:
+      return "int";
+    case t_base_type::TYPE_I64:
+      return "int";
+    case t_base_type::TYPE_DOUBLE:
+      return "double";
+    }
+  } else if (type->is_enum()) {
+    return "int";
+  } else if (type->is_struct() || type->is_xception()) {
+    return php_namespace(type->get_program()) + type->get_name();
+  } else if (type->is_map()) {
+    return "array";
+  } else if (type->is_set()) {
+    t_set* tset = static_cast<t_set*>(type);
+    t_type* t_elem = tset->get_elem_type();
+    if (t_elem->is_container()) {
+      return "(" + type_to_phpdoc(t_elem) + ")[]";
+    } else {
+      return type_to_phpdoc(t_elem) + "[]";
+    }
+  } else if (type->is_list()) {
+    t_list* tlist = static_cast<t_list*>(type);
+    t_type* t_elem = tlist->get_elem_type();
+    if (t_elem->is_container()) {
+      return "(" + type_to_phpdoc(t_elem) + ")[]";
+    } else {
+      return type_to_phpdoc(t_elem) + "[]";
+    }
   }
 
   throw "INVALID TYPE IN type_to_enum: " + type->get_name();

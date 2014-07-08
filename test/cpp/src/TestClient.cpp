@@ -22,6 +22,7 @@
 
 #include <iostream>
 #include <thrift/protocol/TBinaryProtocol.h>
+#include <thrift/protocol/TCompactProtocol.h>
 #include <thrift/protocol/TJSONProtocol.h>
 #include <thrift/transport/THttpClient.h>
 #include <thrift/transport/TTransportUtils.h>
@@ -84,7 +85,7 @@ static void testVoid_clientReturn(const char* host, int port, event_base *base, 
     delete client;
     boost::shared_ptr<TAsyncChannel> channel(new TEvhttpClientChannel(host, "/", host, port, base));
     client = new ThriftTestCobClient(channel, protocolFactory);
-    client->testString(tr1::bind(testString_clientReturn, host, port, base, protocolFactory, std::tr1::placeholders::_1), "Test");
+    client->testString(tcxx::bind(testString_clientReturn, host, port, base, protocolFactory, tcxx::placeholders::_1), "Test");
   } catch (TException& exn) {
     cout << "Error: " << exn.what() << endl;
   }
@@ -101,6 +102,7 @@ int main(int argc, char** argv) {
   string transport_type = "buffered";
   string protocol_type = "binary";
   string domain_socket = "";
+  bool noinsane = false;
 
   boost::program_options::options_description desc("Allowed options");
   desc.add_options()
@@ -109,9 +111,10 @@ int main(int argc, char** argv) {
       ("port", boost::program_options::value<int>(&port)->default_value(port), "Port number to connect")
 	  ("domain-socket", boost::program_options::value<string>(&domain_socket)->default_value(domain_socket), "Domain Socket (e.g. /tmp/ThriftTest.thrift), instead of host and port")
       ("transport", boost::program_options::value<string>(&transport_type)->default_value(transport_type), "Transport: buffered, framed, http, evhttp")
-      ("protocol", boost::program_options::value<string>(&protocol_type)->default_value(protocol_type), "Protocol: binary, json")
+      ("protocol", boost::program_options::value<string>(&protocol_type)->default_value(protocol_type), "Protocol: binary, compact, json")
 	  ("ssl", "Encrypted Transport using SSL")
       ("testloops,n", boost::program_options::value<int>(&numTests)->default_value(numTests), "Number of Tests")
+      ("noinsane", "Do not run insanity test")
   ;
 
   boost::program_options::variables_map vm;
@@ -126,6 +129,7 @@ int main(int argc, char** argv) {
   try {
     if (!protocol_type.empty()) {
       if (protocol_type == "binary") {
+      } else if (protocol_type == "compact") {
       } else if (protocol_type == "json") {
       } else {
           throw invalid_argument("Unknown protocol type "+protocol_type);
@@ -151,6 +155,10 @@ int main(int argc, char** argv) {
   if (vm.count("ssl")) {
     ssl = true;
   }
+  
+  if (vm.count("noinsane")) {
+    noinsane = true;
+  }
 
   boost::shared_ptr<TTransport> transport;
   boost::shared_ptr<TProtocol> protocol;
@@ -161,7 +169,7 @@ int main(int argc, char** argv) {
   if (ssl) {
     factory = boost::shared_ptr<TSSLSocketFactory>(new TSSLSocketFactory());
     factory->ciphers("ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH");
-    factory->loadTrustedCertificates("./trusted-ca-certificate.pem");
+    factory->loadTrustedCertificates("keys/CA.pem");
     factory->authenticate(true);
     socket = factory->createSocket(host, port);
   } else {
@@ -188,6 +196,9 @@ int main(int argc, char** argv) {
   if (protocol_type.compare("json") == 0) {
     boost::shared_ptr<TProtocol> jsonProtocol(new TJSONProtocol(transport));
     protocol = jsonProtocol;
+  } else if (protocol_type.compare("compact") == 0) {
+    boost::shared_ptr<TProtocol> compactProtocol(new TCompactProtocol(transport));
+    protocol = compactProtocol;
   } else{
     boost::shared_ptr<TBinaryProtocol> binaryProtocol(new TBinaryProtocol(transport));
     protocol = binaryProtocol;
@@ -212,7 +223,7 @@ int main(int argc, char** argv) {
 
     boost::shared_ptr<TAsyncChannel> channel(new TEvhttpClientChannel(host.c_str(), "/", host.c_str(), port, base));
     ThriftTestCobClient* client = new ThriftTestCobClient(channel, protocolFactory.get());
-    client->testVoid(tr1::bind(testVoid_clientReturn, host.c_str(), port, base, protocolFactory.get(), std::tr1::placeholders::_1));
+    client->testVoid(tcxx::bind(testVoid_clientReturn, host.c_str(), port, base, protocolFactory.get(), tcxx::placeholders::_1));
 
     event_base_loop(base, 0);
     return 0;
@@ -288,7 +299,7 @@ int main(int argc, char** argv) {
      */
     printf("testI64(-34359738368)");
     int64_t i64 = testClient.testI64(-34359738368LL);
-    printf(" = %"PRId64"\n", i64);
+    printf(" = %" PRId64 "\n", i64);
     if (i64 != -34359738368LL)
         failCount++;
     /**
@@ -311,7 +322,7 @@ int main(int argc, char** argv) {
     out.i64_thing = -5;
     Xtruct in;
     testClient.testStruct(in, out);
-    printf(" = {\"%s\", %d, %d, %"PRId64"}\n",
+    printf(" = {\"%s\", %d, %d, %" PRId64 "}\n",
            in.string_thing.c_str(),
            (int)in.byte_thing,
            in.i32_thing,
@@ -330,7 +341,7 @@ int main(int argc, char** argv) {
     Xtruct2 in2;
     testClient.testNest(in2, out2);
     in = in2.struct_thing;
-    printf(" = {%d, {\"%s\", %d, %d, %"PRId64"}, %d}\n",
+    printf(" = {%d, {\"%s\", %d, %d, %" PRId64 "}, %d}\n",
            in2.byte_thing,
            in.string_thing.c_str(),
            (int)in.byte_thing,
@@ -488,7 +499,7 @@ int main(int argc, char** argv) {
      */
     printf("testTypedef(309858235082523)");
     UserId uid = testClient.testTypedef(309858235082523LL);
-    printf(" = %"PRId64"\n", uid);
+    printf(" = %" PRId64 "\n", uid);
     if (uid != 309858235082523LL)
     	failCount++;
 
@@ -513,52 +524,53 @@ int main(int argc, char** argv) {
     /**
      * INSANITY TEST
      */
-    Insanity insane;
-    insane.userMap.insert(make_pair(Numberz::FIVE, 5000));
-    Xtruct truck;
-    truck.string_thing = "Truck";
-    truck.byte_thing = 8;
-    truck.i32_thing = 8;
-    truck.i64_thing = 8;
-    insane.xtructs.push_back(truck);
-    printf("testInsanity()");
-    map<UserId, map<Numberz::type,Insanity> > whoa;
-    testClient.testInsanity(whoa, insane);
-    printf(" = {");
-    map<UserId, map<Numberz::type,Insanity> >::const_iterator i_iter;
-    for (i_iter = whoa.begin(); i_iter != whoa.end(); ++i_iter) {
-      printf("%"PRId64" => {", i_iter->first);
-      map<Numberz::type,Insanity>::const_iterator i2_iter;
-      for (i2_iter = i_iter->second.begin();
-           i2_iter != i_iter->second.end();
-           ++i2_iter) {
-        printf("%d => {", i2_iter->first);
-        map<Numberz::type, UserId> userMap = i2_iter->second.userMap;
-        map<Numberz::type, UserId>::const_iterator um;
-        printf("{");
-        for (um = userMap.begin(); um != userMap.end(); ++um) {
-          printf("%d => %"PRId64", ", um->first, um->second);
-        }
-        printf("}, ");
+    if (!noinsane) {
+      Insanity insane;
+      insane.userMap.insert(make_pair(Numberz::FIVE, 5000));
+      Xtruct truck;
+      truck.string_thing = "Truck";
+      truck.byte_thing = 8;
+      truck.i32_thing = 8;
+      truck.i64_thing = 8;
+      insane.xtructs.push_back(truck);
+      printf("testInsanity()");
+      map<UserId, map<Numberz::type,Insanity> > whoa;
+      testClient.testInsanity(whoa, insane);
+      printf(" = {");
+      map<UserId, map<Numberz::type,Insanity> >::const_iterator i_iter;
+      for (i_iter = whoa.begin(); i_iter != whoa.end(); ++i_iter) {
+        printf("%" PRId64 " => {", i_iter->first);
+        map<Numberz::type,Insanity>::const_iterator i2_iter;
+        for (i2_iter = i_iter->second.begin();
+             i2_iter != i_iter->second.end();
+             ++i2_iter) {
+          printf("%d => {", i2_iter->first);
+          map<Numberz::type, UserId> userMap = i2_iter->second.userMap;
+          map<Numberz::type, UserId>::const_iterator um;
+          printf("{");
+          for (um = userMap.begin(); um != userMap.end(); ++um) {
+            printf("%d => %" PRId64 ", ", um->first, um->second);
+          }
+          printf("}, ");
 
-        vector<Xtruct> xtructs = i2_iter->second.xtructs;
-        vector<Xtruct>::const_iterator x;
-        printf("{");
-        for (x = xtructs.begin(); x != xtructs.end(); ++x) {
-          printf("{\"%s\", %d, %d, %"PRId64"}, ",
-                 x->string_thing.c_str(),
-                 (int)x->byte_thing,
-                 x->i32_thing,
-                 x->i64_thing);
-        }
-        printf("}");
+          vector<Xtruct> xtructs = i2_iter->second.xtructs;
+          vector<Xtruct>::const_iterator x;
+          printf("{");
+          for (x = xtructs.begin(); x != xtructs.end(); ++x) {
+            printf("{\"%s\", %d, %d, %" PRId64 "}, ",
+                   x->string_thing.c_str(),
+                   (int)x->byte_thing,
+                   x->i32_thing,
+                   x->i64_thing);
+          }
+          printf("}");
 
+          printf("}, ");
+        }
         printf("}, ");
       }
-      printf("}, ");
+      printf("}\n");
     }
-    printf("}\n");
-
     /* test exception */
 
     try {
@@ -658,7 +670,7 @@ int main(int argc, char** argv) {
     uint64_t stop = now();
     uint64_t tot = stop-start;
 
-    printf("Total time: %"PRIu64" us\n", stop-start);
+    printf("Total time: %" PRIu64 " us\n", stop-start);
 
     time_tot += tot;
     if (time_min == 0 || tot < time_min) {
@@ -676,9 +688,9 @@ int main(int argc, char** argv) {
 
   uint64_t time_avg = time_tot / numTests;
 
-  printf("Min time: %"PRIu64" us\n", time_min);
-  printf("Max time: %"PRIu64" us\n", time_max);
-  printf("Avg time: %"PRIu64" us\n", time_avg);
+  printf("Min time: %" PRIu64 " us\n", time_min);
+  printf("Max time: %" PRIu64 " us\n", time_max);
+  printf("Avg time: %" PRIu64 " us\n", time_avg);
 
   return failCount;
 }
