@@ -40,22 +40,52 @@ __all__ = ['TNonblockingServer']
 class Worker(threading.Thread):
     """Worker is a small helper to process incoming connection."""
 
-    def __init__(self, queue):
+    def __init__(self):
         threading.Thread.__init__(self)
+        self.prepared = False
+        self.queue = None
+        self.processor = None
+
+    def prepare(self, queue, processor):
+        self.prepared = True
         self.queue = queue
+        self.processor = processor
+
+    def step(self):
+      """
+      This method is being called once every request or after timeOut.
+      It is designed to allow user for processing his own events in the same thread
+      as processing Thrift's requests
+      """
+      pass
 
     def run(self):
         """Process queries from task queue, stop if processor is None."""
+        assert self.prepared, "You have to call prepare before starting the Worker"
+
         while True:
             try:
-                processor, iprot, oprot, otrans, callback = self.queue.get()
-                if processor is None:
+                self.step()
+                #never use here self.queue.get(True, timeOut). It's more then 3 times
+                #slower (in terms of request per seconds), then version without timeouts
+                #That is the reason for using timeOut in select.select call, which is
+                #being handled by much faster C extension 
+                iprot, oprot, otrans, callback = self.queue.get(True)
+                if iprot is None:
+                  if oprot:
+                    #close
                     break
-                processor.process(iprot, oprot)
-                callback(True, otrans.getvalue())
+                  else:
+                    #timeout
+                    continue
+                self._process(iprot, oprot, otrans, callback)
             except Exception:
                 logging.exception("Exception while processing request")
                 callback(False, '')
+
+    def _process(self, iprot, oprot, otrans, callback):
+        self.processor.process(iprot, oprot)
+        callback(True, otrans.getvalue())
 
 WAIT_LEN = 0
 WAIT_MESSAGE = 1
@@ -220,14 +250,20 @@ class Connection:
 
 
 class TNonblockingServer:
+    CLOSE_WORKER_MSG = [None, True, True, True]
+    TIMEOUT_WORKER_MSG = [None, False, False, False]
     """Non-blocking server."""
-
     def __init__(self,
                  processor,
                  lsocket,
                  inputProtocolFactory=None,
                  outputProtocolFactory=None,
-                 threads=10):
+                 threads=10,
+                 timeOut=None):
+        """
+        Parameters:
+         - timeOut - timeOut, after which, one Worker will execute step() method
+        """
         self.processor = processor
         self.socket = lsocket
         self.in_protocol = inputProtocolFactory or TBinaryProtocolFactory()
@@ -237,7 +273,7 @@ class TNonblockingServer:
         self.tasks = Queue.Queue()
         self._read, self._write = socket.socketpair()
         self.prepared = False
-        self._stop = False
+        self.timeOut = timeOut
 
     def setNumThreads(self, num):
         """Set the number of worker threads that should be created."""
@@ -250,11 +286,15 @@ class TNonblockingServer:
         if self.prepared:
             return
         self.socket.listen()
+        self.start_workers()
+        self.prepared = True
+
+    def start_workers(self):
         for _ in xrange(self.threads):
-            thread = Worker(self.tasks)
+            thread = Worker()
+            thread.prepare(self.tasks, self.processor)
             thread.setDaemon(True)
             thread.start()
-        self.prepared = True
 
     def wake_up(self):
         """Wake up main thread.
@@ -295,7 +335,7 @@ class TNonblockingServer:
                 writable.append(connection.fileno())
             if connection.is_closed():
                 del self.clients[i]
-        return select.select(readable, writable, readable)
+        return select.select(readable, writable, readable, self.timeOut)
 
     def handle(self):
         """Handle requests.
@@ -320,18 +360,25 @@ class TNonblockingServer:
                     otransport = TTransport.TMemoryBuffer()
                     iprot = self.in_protocol.getProtocol(itransport)
                     oprot = self.out_protocol.getProtocol(otransport)
-                    self.tasks.put([self.processor, iprot, oprot,
-                                    otransport, connection.ready])
+                    self.tasks.put([iprot, oprot, otransport,
+                                    connection.ready])
         for writeable in wset:
             self.clients[writeable].write()
         for oob in xset:
             self.clients[oob].close()
             del self.clients[oob]
 
+        if len(rset) + len(wset) + len(xset) == 0:
+          self._timeout_worker()
+
+    def _timeout_worker(self):
+        #Check comment in Worker::run method
+        self.tasks.put(self.TIMEOUT_WORKER_MSG)
+
     def close(self):
         """Closes the server."""
         for _ in xrange(self.threads):
-            self.tasks.put([None, None, None, None, None])
+            self.tasks.put(self.CLOSE_WORKER_MSG)
         self.socket.close()
         self.prepared = False
 

@@ -104,6 +104,9 @@ class t_py_generator : public t_generator {
     iter = parsed_options.find("utf8strings");
     gen_utf8strings_ = (iter != parsed_options.end());
 
+    iter = parsed_options.find("async");
+    gen_async_ = (iter != parsed_options.end());
+
     copy_options_ = option_string;
 
     if (gen_twisted_) {
@@ -155,6 +158,7 @@ class t_py_generator : public t_generator {
   void generate_service_client    (t_service* tservice);
   void generate_service_remote    (t_service* tservice);
   void generate_service_server    (t_service* tservice);
+  void generate_async_functions   (t_service* tservice);
   void generate_process_function  (t_service* tservice, t_function* tfunction);
 
   /**
@@ -320,6 +324,11 @@ class t_py_generator : public t_generator {
    * True if strings should be encoded using utf-8.
    */
   bool gen_utf8strings_;
+
+  /**
+   * True if we should generate asynchronous services.
+   */
+  bool gen_async_;
 
   /**
    * File streams
@@ -1087,6 +1096,10 @@ void t_py_generator::generate_service(t_service* tservice) {
     f_service_ << "from tornado import stack_context" << endl;
   }
 
+  if (gen_async_) {
+    f_service_ << "from functools import partial" << endl;
+  }
+
   f_service_ << endl;
 
   // Generate the three main parts of the service
@@ -1760,7 +1773,8 @@ void t_py_generator::generate_service_server(t_service* tservice) {
       "  implements(Iface)" << endl << endl;
   } else {
     f_service_ <<
-      "class Processor(" << extends_processor << "Iface, TProcessor):" << endl;
+      "class Processor(" << extends_processor << "Iface, " <<
+      (gen_async_ ? "TAsyncProcessor" : "TProcessor") << "):" << endl;
   }
 
   indent_up();
@@ -1807,6 +1821,10 @@ void t_py_generator::generate_service_server(t_service* tservice) {
       indent() << "tr = TTransport.TMemoryBuffer(frame)" << endl <<
       indent() << "iprot = iprot_factory.getProtocol(tr)" << endl <<
       endl;
+  } else if (gen_async_) {
+    indent(f_service_) <<
+      "def process(self, iprot, oprot, completed):" << endl;
+    indent_up();
   } else {
     f_service_ <<
       indent() << "def process(self, iprot, oprot):" << endl;
@@ -1850,8 +1868,14 @@ void t_py_generator::generate_service_server(t_service* tservice) {
       indent() << "  yield gen.Task(self._processMap[name], self, seqid, iprot, oprot)" << endl <<
       indent() << "callback()" << endl;
   } else {
-    f_service_ <<
-      indent() << "  self._processMap[name](self, seqid, iprot, oprot)" << endl;
+    if (gen_async_) {
+      f_service_ <<
+        indent() << "  self._processMap[name](self, seqid, iprot, oprot, completed)" << endl;
+    }
+    else {
+      f_service_ <<
+        indent() << "  self._processMap[name](self, seqid, iprot, oprot)" << endl;
+    }
 
     // Read end of args field, the T_STOP, and the struct close
     f_service_ <<
@@ -1861,10 +1885,59 @@ void t_py_generator::generate_service_server(t_service* tservice) {
   indent_down();
   f_service_ << endl;
 
+  if (gen_async_) {
+    generate_async_functions(tservice);
+  }
+
   // Generate the process subfunctions
   for (f_iter = functions.begin(); f_iter != functions.end(); ++f_iter) {
     generate_process_function(tservice, *f_iter);
   }
+
+  indent_down();
+  f_service_ << endl;
+}
+
+/**
+ * Generates async helper functions' definitions.
+ */
+void t_py_generator::generate_async_functions(t_service* tservice) {
+
+  (void) tservice;
+  // Open function
+  indent(f_service_) <<
+    "def async_completed(self, completed, command, seqid, oprot, result, val):" << endl;
+  indent_up();
+
+  f_service_ <<
+    indent() << "result.success = val" << endl <<
+    indent() << "self.async_call(command, seqid, oprot, result)" << endl <<
+    indent() << "completed()" << endl;
+
+  indent_down();
+  f_service_ << endl;
+
+  indent(f_service_) <<
+    "def async_error(self, completed, command, seqid, oprot, result, ex):" << endl;
+  indent_up();
+
+  f_service_ <<
+    indent() << "result.ex = ex" << endl <<
+    indent() << "self.async_call(command, seqid, oprot, result)" << endl <<
+    indent() << "completed()" << endl;
+
+  indent_down();
+  f_service_ << endl;
+
+  indent(f_service_) <<
+    "def async_call(self, command, seqid, oprot, result):" << endl;
+  indent_up();
+
+  f_service_ <<
+    indent() << "oprot.writeMessageBegin(command, TMessageType.REPLY, seqid)" << endl <<
+    indent() << "result.write(oprot)" << endl <<
+    indent() << "oprot.writeMessageEnd()" << endl <<
+    indent() << "oprot.trans.flush()" << endl;
 
   indent_down();
   f_service_ << endl;
@@ -1884,12 +1957,16 @@ void t_py_generator::generate_process_function(t_service* tservice,
       indent() << "@gen.engine" << endl <<
       indent() << "def process_" << tfunction->get_name() <<
                   "(self, seqid, iprot, oprot, callback):" << endl;
+  } else if (gen_async_) {
+    f_service_ <<
+      indent() << "def process_" << tfunction->get_name() <<
+                  "(self, seqid, iprot, oprot, completed):" << endl;
+
   } else {
     f_service_ <<
       indent() << "def process_" << tfunction->get_name() <<
                   "(self, seqid, iprot, oprot):" << endl;
   }
-
   indent_up();
 
   string argsname = tfunction->get_name() + "_args";
@@ -2107,6 +2184,21 @@ void t_py_generator::generate_process_function(t_service* tservice,
       }
       f_service_ << "args." << (*f_iter)->get_name();
     }
+
+    if (gen_async_ && !tfunction->is_oneway()) {
+      if (!first) {
+        f_service_ << ", ";
+      }
+      f_service_ << "onCompleted=partial(self.async_completed, completed, \""
+                 << tfunction->get_name()
+                 << "\", seqid, oprot, result"
+                 <<  (tfunction->get_returntype()->is_void() ? ", None), " : "), " ) ;
+
+      f_service_ << "onError=partial(self.async_error, completed, \""
+                 << tfunction->get_name()
+                 << "\", seqid, oprot, result)";
+    }
+
     f_service_ << ")" << endl;
 
     if (!tfunction->is_oneway() && xceptions.size() > 0) {
@@ -2118,6 +2210,12 @@ void t_py_generator::generate_process_function(t_service* tservice,
           indent_up();
           f_service_ <<
             indent() << "result." << (*x_iter)->get_name() << " = " << (*x_iter)->get_name() << endl;
+          if (gen_async_) {
+            indent(f_service_) << "self.async_error(completed, \""
+                               << tfunction->get_name()
+                               << "\" , seqid, oprot, result, "
+                               <<  (*x_iter)->get_name() << ")" << endl;
+          }
           indent_down();
         } else {
           f_service_ <<
@@ -2126,8 +2224,12 @@ void t_py_generator::generate_process_function(t_service* tservice,
       }
     }
 
-    // Shortcut out here for oneway functions
-    if (tfunction->is_oneway()) {
+    if (tfunction->is_oneway() && gen_async_) {
+      f_service_ << indent() << "completed()" << endl;
+    }
+
+    // Shortcut out here for oneway functions and async
+    if (tfunction->is_oneway() || gen_async_) {
       f_service_ <<
         indent() << "return" << endl;
       indent_down();
@@ -2876,6 +2978,7 @@ THRIFT_REGISTER_GENERATOR(py, "Python",
 "    new_style:       Generate new-style classes.\n" \
 "    twisted:         Generate Twisted-friendly RPC services.\n" \
 "    tornado:         Generate code for use with Tornado.\n" \
+"    async:           Generate asynchronous services.\n" \
 "    utf8strings:     Encode/decode strings using utf8 in the generated code.\n" \
 "    slots:           Generate code using slots for instance members.\n" \
 "    dynamic:         Generate dynamic code, less code generated but slower.\n" \

@@ -71,6 +71,18 @@ class TProcessor:
 
   def process(iprot, oprot):
     pass
+  
+  
+class TAsyncProcessor:
+  """Base class for asynchronous procsessor, which works on two streams."""
+
+  def process(iprot, oprot, finished):
+    """
+    Parameters:
+    - finished - Zero arguments callback, which should be called once request has been processed
+                 and response has been written onto output stream.
+    """
+    pass
 
 
 class TException(Exception):
