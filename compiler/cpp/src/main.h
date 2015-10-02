@@ -21,7 +21,10 @@
 #define T_MAIN_H
 
 #include <string>
+#include <cstdio>
+
 #include "logging.h"
+
 #include "parse/t_const.h"
 #include "parse/t_field.h"
 
@@ -29,9 +32,7 @@
  * Defined in the flex library
  */
 
-extern "C" {
-  int yylex(void);
-}
+extern "C" { int yylex(void); }
 
 int yyparse(void);
 
@@ -99,8 +100,8 @@ void check_for_list_of_bytes(t_type* list_elem_type);
  * Flex utilities
  */
 
-extern int   yylineno;
-extern char  yytext[];
-extern FILE* yyin;
+extern int yylineno;
+extern char yytext[];
+extern std::FILE* yyin;
 
 #endif

@@ -17,31 +17,10 @@
 # under the License.
 #
 
-
-cmake_minimum_required(VERSION 2.8)
-
-project(thrift-compiler)
-
-# Read the version information from the Autoconf file
-file (STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/../../configure.ac" CONFIGURE_AC REGEX "AC_INIT\\(.*\\)" )
-
-# The following variable is used in the version.h.in file
-string(REGEX REPLACE "AC_INIT\\(\\[.*\\], \\[([0-9]+\\.[0-9]+\\.[0-9]+(-dev)?)\\]\\)" "\\1" PACKAGE_VERSION ${CONFIGURE_AC})
-message(STATUS "Thrift package version: ${PACKAGE_VERSION}")
-
-# These are internal to CMake
-string(REGEX REPLACE "([0-9]+\\.[0-9]+\\.[0-9]+)(-dev)?" "\\1" thrift_VERSION ${PACKAGE_VERSION})
-string(REGEX REPLACE "([0-9]+)\\.[0-9]+\\.[0-9]+" "\\1" thrift_VERSION_MAJOR ${thrift_VERSION})
-string(REGEX REPLACE "[0-9]+\\.([0-9])+\\.[0-9]+" "\\1" thrift_VERSION_MINOR ${thrift_VERSION})
-string(REGEX REPLACE "[0-9]+\\.[0-9]+\\.([0-9]+)" "\\1" thrift_VERSION_PATCH ${thrift_VERSION})
-message(STATUS "Thrift version: ${thrift_VERSION} (${thrift_VERSION_MAJOR}.${thrift_VERSION_MINOR}.${thrift_VERSION_PATCH})")
-
 # Windows has a different header
 if(MSVC)
-    set(FLEX_FLAGS "--wincompat") # Don't use unistd.h on windows
     configure_file(${CMAKE_CURRENT_SOURCE_DIR}/src/windows/version.h.in ${CMAKE_CURRENT_BINARY_DIR}/version.h)
 else()
-    set(FLEX_FLAGS " ")
     configure_file(${CMAKE_CURRENT_SOURCE_DIR}/version.h.in ${CMAKE_CURRENT_BINARY_DIR}/version.h)
 endif()
 
@@ -50,7 +29,7 @@ find_package(BISON REQUIRED)
 
 # Create flex and bison files and build the lib parse static library
 BISON_TARGET(thrifty ${CMAKE_CURRENT_SOURCE_DIR}/src/thrifty.yy ${CMAKE_CURRENT_BINARY_DIR}/thrifty.cc)
-FLEX_TARGET(thriftl ${CMAKE_CURRENT_SOURCE_DIR}/src/thriftl.ll ${CMAKE_CURRENT_BINARY_DIR}/thriftl.cc COMPILE_FLAGS ${FLEX_FLAGS})
+FLEX_TARGET(thriftl ${CMAKE_CURRENT_SOURCE_DIR}/src/thriftl.ll ${CMAKE_CURRENT_BINARY_DIR}/thriftl.cc)
 ADD_FLEX_BISON_DEPENDENCY(thriftl thrifty)
 
 # HACK: Work around the fact that bison crates a .hh file but we need a .h file
@@ -77,6 +56,7 @@ set( thrift_SOURCES
     src/main.h
     src/platform.h
     src/md5.h
+    src/audit/t_audit.cpp
     src/parse/t_doc.h
     src/parse/t_type.h
     src/parse/t_base_type.h
@@ -120,6 +100,7 @@ THRIFT_ADD_COMPILER(c_glib  "Enable compiler for C with Glib" ON)
 THRIFT_ADD_COMPILER(cpp     "Enable compiler for C++" ON)
 THRIFT_ADD_COMPILER(java    "Enable compiler for Java"   ON)
 THRIFT_ADD_COMPILER(as3     "Enable compiler for ActionScript 3" ON)
+THRIFT_ADD_COMPILER(haxe    "Enable compiler for Haxe" ON)
 THRIFT_ADD_COMPILER(csharp  "Enable compiler for C#" ON)
 THRIFT_ADD_COMPILER(py      "Enable compiler for Python 2.0" ON)
 THRIFT_ADD_COMPILER(rb      "Enable compiler for Ruby" ON)
@@ -133,6 +114,7 @@ THRIFT_ADD_COMPILER(hs      "Enable compiler for Haskell" ON)
 THRIFT_ADD_COMPILER(xsd     "Enable compiler for XSD" ON)
 THRIFT_ADD_COMPILER(html    "Enable compiler for HTML Documentation" ON)
 THRIFT_ADD_COMPILER(js      "Enable compiler for JavaScript" ON)
+THRIFT_ADD_COMPILER(json    "Enable compiler for JSON" ON)
 THRIFT_ADD_COMPILER(javame  "Enable compiler for Java ME" ON)
 THRIFT_ADD_COMPILER(delphi  "Enable compiler for Delphi" ON)
 THRIFT_ADD_COMPILER(go      "Enable compiler for Go" ON)
@@ -143,10 +125,9 @@ THRIFT_ADD_COMPILER(lua     "Enable compiler for Lua" ON)
 # we also add the current binary directory for generated files
 include_directories(${CMAKE_CURRENT_BINARY_DIR} src)
 
-add_executable(thrift ${thrift_SOURCES})
+add_executable(thrift-compiler ${thrift_SOURCES})
+set_target_properties(thrift-compiler PROPERTIES OUTPUT_NAME thrift)
 
-target_link_libraries(thrift libparse)
+target_link_libraries(thrift-compiler libparse)
 
-if(NOT WIN32)
-    install(TARGETS thrift DESTINATION bin)
-endif()
+install(TARGETS thrift-compiler DESTINATION "${BIN_INSTALL_DIR}")

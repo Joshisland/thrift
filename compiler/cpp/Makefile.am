@@ -21,13 +21,9 @@
 # Please see doc/old-thrift-license.txt in the Thrift distribution for
 # details.
 
-# Override Automake rule that forces .hh extension 
-am__yacc_c2h = sed -e s/cc$$/h/ -e s/cpp$$/hpp/ -e s/cxx$$/hxx/ \
-           -e s/c++$$/h++/ -e s/c$$/h/
-
 AM_YFLAGS = -d
 LIBS =
-BUILT_SOURCES = thrifty.cc
+BUILT_SOURCES = src/thrifty.cc
 
 bin_PROGRAMS = thrift
 
@@ -42,7 +38,10 @@ thrift_SOURCES = src/main.cc \
                  src/globals.h \
                  src/main.h \
                  src/platform.h \
+                 src/logging.h \
                  src/md5.h \
+                 src/audit/t_audit.cpp \
+                 src/audit/t_audit.h \
                  src/parse/t_doc.h \
                  src/parse/t_type.h \
                  src/parse/t_base_type.h \
@@ -73,7 +72,9 @@ thrift_SOURCES = src/main.cc \
 thrift_SOURCES += src/generate/t_c_glib_generator.cc \
                   src/generate/t_cpp_generator.cc \
                   src/generate/t_java_generator.cc \
+                  src/generate/t_json_generator.cc \
                   src/generate/t_as3_generator.cc \
+                  src/generate/t_haxe_generator.cc \
                   src/generate/t_csharp_generator.cc \
                   src/generate/t_py_generator.cc \
                   src/generate/t_rb_generator.cc \
@@ -95,7 +96,7 @@ thrift_SOURCES += src/generate/t_c_glib_generator.cc \
                   src/generate/t_lua_generator.cc
 
 thrift_CPPFLAGS = -I$(srcdir)/src
-thrift_CXXFLAGS = -Wall
+thrift_CXXFLAGS = -Wall -Wextra -pedantic
 thrift_LDADD = @LEXLIB@ libparse.a
 
 libparse_a_CPPFLAGS = -I$(srcdir)/src
@@ -110,10 +111,15 @@ WINDOWS_DIST = \
              compiler.vcxproj.filters
 
 EXTRA_DIST = \
+             coding_standards.md \
              README.md \
+             CMakeLists.txt \
              $(WINDOWS_DIST)
 
 clean-local:
 	$(RM) thriftl.cc thrifty.cc thrifty.h thrifty.hh version.h windows/version.h
 
 src/main.cc: version.h
+
+style-local:
+	$(CPPSTYLE_CMD)

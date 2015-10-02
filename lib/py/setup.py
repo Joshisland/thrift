@@ -28,6 +28,11 @@ except:
 from distutils.command.build_ext import build_ext
 from distutils.errors import CCompilerError, DistutilsExecError, DistutilsPlatformError
 
+# Fix to build sdist under vagrant
+import os
+if 'vagrant' in str(os.environ):
+    del os.link
+
 include_dirs = []
 if sys.platform == 'win32':
     include_dirs.append('compat/win32')
@@ -97,7 +102,7 @@ try:
 except BuildFailed:
     print()
     print('*' * 80)
-    print("An error occured while trying to compile with the C extension enabled")
+    print("An error occurred while trying to compile with the C extension enabled")
     print("Attempting to build without the extension now")
     print('*' * 80)
     print()

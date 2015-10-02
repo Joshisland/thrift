@@ -17,6 +17,8 @@
 # under the License.
 #
 
+SUBDIRS = . test/ThriftTest
+
 THRIFTCODE= \
             src/Collections/THashSet.cs \
             src/Collections/TCollections.cs \
@@ -46,6 +48,7 @@ THRIFTCODE= \
             src/Server/TThreadPoolServer.cs \
             src/Server/TSimpleServer.cs \
             src/Server/TServer.cs \
+            src/Server/TServerEventHandler.cs \
             src/Transport/TBufferedTransport.cs \
             src/Transport/TTransport.cs \
             src/Transport/TSocket.cs \
@@ -66,7 +69,11 @@ THRIFTCODE= \
             src/TException.cs \
             src/TApplicationException.cs
 
+if MONO_MCS
+CSC=mcs
+else
 CSC=gmcs
+endif
 
 if NET_2_0
 MONO_DEFINES=/d:NET_2_0
@@ -80,11 +87,14 @@ Thrift.dll: $(THRIFTCODE)
 clean-local:
 	$(RM) Thrift.dll
 
+precross: all-local
+	$(MAKE) -C test/ThriftTest precross
+
 # run csharp tests?
 # check:
-# 	cd test/ThriftTest && ./maketest.sh 
+# 	cd test/ThriftTest && ./maketest.sh
 # 	cd test/Multiplex && ./maketest.sh
-    
+
 EXTRA_DIST = \
              $(THRIFTCODE) \
              ThriftMSBuildTask \
@@ -93,4 +103,6 @@ EXTRA_DIST = \
              src/Thrift.WP7.csproj \
              src/Properties/AssemblyInfo.WP7.cs \
              src/Transport/TSilverlightSocket.cs \
-             test
+             test \
+             coding_standards.md \
+             README.md

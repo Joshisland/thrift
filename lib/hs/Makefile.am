@@ -18,16 +18,17 @@
 #
 
 EXTRA_DIST = \
-  LICENSE \
-  README.md \
-  Setup.lhs \
-  TODO \
-  Thrift.cabal \
-  src
+	coding_standards.md \
+	LICENSE \
+	README.md \
+	Setup.lhs \
+	TODO \
+	Thrift.cabal \
+	src
 
 all-local:
-	$(CABAL) configure $(CABAL_CONFIGURE_FLAGS)
-	$(CABAL) build
+	$(CABAL) update
+	$(CABAL) install
 
 install-exec-hook:
 	$(CABAL) install

@@ -22,6 +22,7 @@
 rm -rf gen-py simple thediffs ttest
 ../../../compiler/cpp/thrift --gen py test1.thrift || exit 1
 ../../../compiler/cpp/thrift --gen py test2.thrift || exit 1
+../../../compiler/cpp/thrift --gen py test3.thrift && exit 1  # Fail since test3.thrift has python keywords
 PYTHONPATH=./gen-py python -c 'import foo.bar.baz' || exit 1
 PYTHONPATH=./gen-py python -c 'import test2' || exit 1
 PYTHONPATH=./gen-py python -c 'import test1' &>/dev/null && exit 1  # Should fail.
@@ -34,7 +35,7 @@ rm -rf simple thediffs
 
 # relative_imports basic generation
 rm -rf gen-py
-../../../compiler/cpp/thrift -r --gen py:relative_imports test3.thrift || exit 1
+../../../compiler/cpp/thrift -r --gen py:relative_imports test_ri.thrift || exit 1
 PYTHONPATH=./gen-py python -c 'import foo.bar.test3' || exit 1
 PYTHONPATH=./gen-py python -c 'import foo.bar.test3.ttypes' || exit 1
 PYTHONPATH=./gen-py python -c 'import foo.bar.test3.constants' || exit 1
@@ -44,6 +45,7 @@ cp -r gen-py simple
 ../../../compiler/cpp/thrift --gen py:relative_imports test1.thrift || exit 1
 ../../../compiler/cpp/thrift --gen py:relative_imports test2.thrift || exit 1
 ../../../compiler/cpp/thrift --gen py:relative_imports test3.thrift || exit 1
+../../../compiler/cpp/thrift --gen py:relative_imports test_ri.thrift || exit 1
 diff -ur simple gen-py > thediffs
 file thediffs | grep -s -q empty || exit 1
 rm -rf simple thediffs

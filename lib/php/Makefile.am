@@ -22,16 +22,19 @@ if WITH_TESTS
 SUBDIRS = test
 endif
 
-%.so:
-	cd src/ext/thrift_protocol/ \
-	  && $(MAKE)
-
 if WITH_PHP_EXTENSION
+%.so:
+	cd src/ext/thrift_protocol/ && $(MAKE)
+
 phpconfdir=$(PHP_CONFIG_PREFIX)
 phpconf_DATA=thrift_protocol.ini
 
 phpmoduledir = `php-config --extension-dir`
 phpmodule_SCRIPTS = src/ext/thrift_protocol/modules/thrift_protocol.so
+
+distclean-local:
+	cd $(phpmodule_SCRIPTS) && $(PHPIZE) --clean
+
 endif
 
 phpdir = $(PHP_PREFIX)/Thrift
@@ -96,6 +99,7 @@ phpstringfunc_DATA = \
 phptransportdir = $(phpdir)/Transport
 phptransport_DATA = \
   lib/Thrift/Transport/TBufferedTransport.php \
+  lib/Thrift/Transport/TCurlClient.php \
   lib/Thrift/Transport/TFramedTransport.php \
   lib/Thrift/Transport/THttpClient.php \
   lib/Thrift/Transport/TMemoryBuffer.php \
@@ -116,10 +120,13 @@ EXTRA_DIST = \
   src/ext/thrift_protocol/config.w32 \
   src/ext/thrift_protocol/php_thrift_protocol.cpp \
   src/ext/thrift_protocol/php_thrift_protocol.h \
+  src/ext/thrift_protocol/run-tests.php \
   src/Thrift.php \
   src/TStringUtils.php \
+  coding_standards.md \
   thrift_protocol.ini \
-  README.apache.md
+  README.apache.md \
+  README.md
 
 MAINTAINERCLEANFILES = \
   Makefile \

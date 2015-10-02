@@ -29,7 +29,9 @@ import socket
 import Queue
 import select
 import struct
+
 import logging
+logger = logging.getLogger(__name__)
 
 from thrift.transport import TTransport
 from thrift.protocol.TBinaryProtocol import TBinaryProtocolFactory
@@ -80,7 +82,7 @@ class Worker(threading.Thread):
                     continue
                 self._process(iprot, oprot, otrans, callback)
             except Exception:
-                logging.exception("Exception while processing request")
+                logger.exception("Exception while processing request")
                 callback(False, '')
 
     def _process(self, iprot, oprot, otrans, callback):
@@ -146,18 +148,18 @@ class Connection:
             # if we read 0 bytes and self.message is empty, then
             # the client closed the connection
             if len(self.message) != 0:
-                logging.error("can't read frame size from socket")
+                logger.error("can't read frame size from socket")
             self.close()
             return
         self.message += read
         if len(self.message) == 4:
             self.len, = struct.unpack('!i', self.message)
             if self.len < 0:
-                logging.error("negative frame size, it seems client "
+                logger.error("negative frame size, it seems client "
                               "doesn't use FramedTransport")
                 self.close()
             elif self.len == 0:
-                logging.error("empty frame, it's really strange")
+                logger.error("empty frame, it's really strange")
                 self.close()
             else:
                 self.message = ''
@@ -175,7 +177,7 @@ class Connection:
         elif self.status == WAIT_MESSAGE:
             read = self.socket.recv(self.len - len(self.message))
             if len(read) == 0:
-                logging.error("can't read frame from socket (get %d of "
+                logger.error("can't read frame from socket (get %d of "
                               "%d bytes)" % (len(self.message), self.len))
                 self.close()
                 return
@@ -299,7 +301,7 @@ class TNonblockingServer:
     def wake_up(self):
         """Wake up main thread.
 
-        The server usualy waits in select call in we should terminate one.
+        The server usually waits in select call in we should terminate one.
         The simplest way is using socketpair.
 
         Select always wait to read from the first socket of socketpair.

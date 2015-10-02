@@ -17,22 +17,9 @@
  * under the License.
  */
 
-include "test1.thrift"
-include "test2.thrift"
-// test1 contains foo.bar.baz namespace
-// test2 is namespace-less, thus it'll just be called test2
-// this (test3) namespace will share some part with test1
-namespace py foo.bar.test3
+namespace py validations
 
-struct relative {
-  1: test1.astruct x;
-  2: test2.another y;
+struct from {
+  1: i32 def;
 }
 
-service Service13 extends test1.Service1{
-    void test3();
-}
-
-service Service23 extends test2.Service2{
-    void test3();
-}

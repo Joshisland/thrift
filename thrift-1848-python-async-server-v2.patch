@@ -1,0 +1,801 @@
+diff --git a/compiler/cpp/src/generate/t_py_generator.cc b/compiler/cpp/src/generate/t_py_generator.cc
+index 4a540f2..aabd75f 100644
+--- a/compiler/cpp/src/generate/t_py_generator.cc
++++ b/compiler/cpp/src/generate/t_py_generator.cc
+@@ -101,6 +101,9 @@ class t_py_generator : public t_generator {
+     iter = parsed_options.find("utf8strings");
+     gen_utf8strings_ = (iter != parsed_options.end());
+ 
++    iter = parsed_options.find("async");
++    gen_async_ = (iter != parsed_options.end());
++
+     copy_options_ = option_string;
+ 
+     if (gen_twisted_) {
+@@ -152,6 +155,7 @@ class t_py_generator : public t_generator {
+   void generate_service_client    (t_service* tservice);
+   void generate_service_remote    (t_service* tservice);
+   void generate_service_server    (t_service* tservice);
++  void generate_async_functions   (t_service* tservice);
+   void generate_process_function  (t_service* tservice, t_function* tfunction);
+ 
+   /**
+@@ -310,6 +314,11 @@ class t_py_generator : public t_generator {
+   bool gen_utf8strings_;
+ 
+   /**
++   * True if we should generate asynchronous services.
++   */
++  bool gen_async_;
++
++  /**
+    * File streams
+    */
+ 
+@@ -1047,7 +1056,7 @@ void t_py_generator::generate_service(t_service* tservice) {
+ 
+   f_service_ <<
+     "from ttypes import *" << endl <<
+-    "from thrift.Thrift import TProcessor" << endl <<
++    "from thrift.Thrift import " << (gen_async_ ? "TAsyncProcessor" : "TProcessor") << endl <<
+     render_fastbinary_includes() << endl;
+ 
+   if (gen_twisted_) {
+@@ -1060,6 +1069,10 @@ void t_py_generator::generate_service(t_service* tservice) {
+     f_service_ << "from tornado import stack_context" << endl;
+   }
+ 
++  if (gen_async_) {
++    f_service_ << "from functools import partial" << endl;
++  }
++
+   f_service_ << endl;
+ 
+   // Generate the three main parts of the service (well, two for now in PHP)
+@@ -1733,7 +1746,8 @@ void t_py_generator::generate_service_server(t_service* tservice) {
+       "  implements(Iface)" << endl << endl;
+   } else {
+     f_service_ <<
+-      "class Processor(" << extends_processor << "Iface, TProcessor):" << endl;
++      "class Processor(" << extends_processor << "Iface, " <<
++      (gen_async_ ? "TAsyncProcessor" : "TProcessor") << "):" << endl;
+   }
+ 
+   indent_up();
+@@ -1780,6 +1794,10 @@ void t_py_generator::generate_service_server(t_service* tservice) {
+       indent() << "tr = TTransport.TMemoryBuffer(frame)" << endl <<
+       indent() << "iprot = iprot_factory.getProtocol(tr)" << endl <<
+       endl;
++  } else if (gen_async_) {
++    indent(f_service_) <<
++      "def process(self, iprot, oprot, completed):" << endl;
++    indent_up();
+   } else {
+     f_service_ <<
+       indent() << "def process(self, iprot, oprot):" << endl;
+@@ -1823,8 +1841,14 @@ void t_py_generator::generate_service_server(t_service* tservice) {
+       indent() << "  yield gen.Task(self._processMap[name], self, seqid, iprot, oprot)" << endl <<
+       indent() << "callback()" << endl;
+   } else {
+-    f_service_ <<
+-      indent() << "  self._processMap[name](self, seqid, iprot, oprot)" << endl;
++    if (gen_async_) {
++      f_service_ <<
++        indent() << "  self._processMap[name](self, seqid, iprot, oprot, completed)" << endl;
++    }
++    else {
++      f_service_ <<
++        indent() << "  self._processMap[name](self, seqid, iprot, oprot)" << endl;
++    }
+ 
+     // Read end of args field, the T_STOP, and the struct close
+     f_service_ <<
+@@ -1834,6 +1858,10 @@ void t_py_generator::generate_service_server(t_service* tservice) {
+   indent_down();
+   f_service_ << endl;
+ 
++  if (gen_async_) {
++    generate_async_functions(tservice);
++  }
++
+   // Generate the process subfunctions
+   for (f_iter = functions.begin(); f_iter != functions.end(); ++f_iter) {
+     generate_process_function(tservice, *f_iter);
+@@ -1844,6 +1872,51 @@ void t_py_generator::generate_service_server(t_service* tservice) {
+ }
+ 
+ /**
++ * Generates async helper functions' definitions.
++ */
++void t_py_generator::generate_async_functions(t_service* tservice) {
++
++  (void) tservice;
++  // Open function
++  indent(f_service_) <<
++    "def async_completed(self, completed, command, seqid, oprot, result, val):" << endl;
++  indent_up();
++
++  f_service_ <<
++    indent() << "result.success = val" << endl <<
++    indent() << "self.async_call(command, seqid, oprot, result)" << endl <<
++    indent() << "completed()" << endl;
++
++  indent_down();
++  f_service_ << endl;
++
++  indent(f_service_) <<
++    "def async_error(self, completed, command, seqid, oprot, result, ex):" << endl;
++  indent_up();
++
++  f_service_ <<
++    indent() << "result.ex = ex" << endl <<
++    indent() << "self.async_call(command, seqid, oprot, result)" << endl <<
++    indent() << "completed()" << endl;
++
++  indent_down();
++  f_service_ << endl;
++
++  indent(f_service_) <<
++    "def async_call(self, command, seqid, oprot, result):" << endl;
++  indent_up();
++
++  f_service_ <<
++    indent() << "oprot.writeMessageBegin(command, TMessageType.REPLY, seqid)" << endl <<
++    indent() << "result.write(oprot)" << endl <<
++    indent() << "oprot.writeMessageEnd()" << endl <<
++    indent() << "oprot.trans.flush()" << endl;
++
++  indent_down();
++  f_service_ << endl;
++}
++
++/**
+  * Generates a process function definition.
+  *
+  * @param tfunction The function to write a dispatcher for
+@@ -1857,12 +1930,16 @@ void t_py_generator::generate_process_function(t_service* tservice,
+       indent() << "@gen.engine" << endl <<
+       indent() << "def process_" << tfunction->get_name() <<
+                   "(self, seqid, iprot, oprot, callback):" << endl;
++  } else if (gen_async_) {
++    f_service_ <<
++      indent() << "def process_" << tfunction->get_name() <<
++                  "(self, seqid, iprot, oprot, completed):" << endl;
++
+   } else {
+     f_service_ <<
+       indent() << "def process_" << tfunction->get_name() <<
+                   "(self, seqid, iprot, oprot):" << endl;
+   }
+-
+   indent_up();
+ 
+   string argsname = tfunction->get_name() + "_args";
+@@ -2080,6 +2157,21 @@ void t_py_generator::generate_process_function(t_service* tservice,
+       }
+       f_service_ << "args." << (*f_iter)->get_name();
+     }
++
++    if (gen_async_ && !tfunction->is_oneway()) {
++      if (!first) {
++        f_service_ << ", ";
++      }
++      f_service_ << "onCompleted=partial(self.async_completed, completed, \""
++                 << tfunction->get_name()
++                 << "\", seqid, oprot, result"
++                 <<  (tfunction->get_returntype()->is_void() ? ", None), " : "), " ) ;
++
++      f_service_ << "onError=partial(self.async_error, completed, \""
++                 << tfunction->get_name()
++                 << "\", seqid, oprot, result)";
++    }
++
+     f_service_ << ")" << endl;
+ 
+     if (!tfunction->is_oneway() && xceptions.size() > 0) {
+@@ -2091,6 +2183,12 @@ void t_py_generator::generate_process_function(t_service* tservice,
+           indent_up();
+           f_service_ <<
+             indent() << "result." << (*x_iter)->get_name() << " = " << (*x_iter)->get_name() << endl;
++          if (gen_async_) {
++            indent(f_service_) << "self.async_error(completed, \""
++                               << tfunction->get_name()
++                               << "\" , seqid, oprot, result, "
++                               <<  (*x_iter)->get_name() << ")" << endl;
++          }
+           indent_down();
+         } else {
+           f_service_ <<
+@@ -2099,8 +2197,12 @@ void t_py_generator::generate_process_function(t_service* tservice,
+       }
+     }
+ 
+-    // Shortcut out here for oneway functions
+-    if (tfunction->is_oneway()) {
++    if (tfunction->is_oneway() && gen_async_) {
++      f_service_ << indent() << "completed()" << endl;
++    }
++
++    // Shortcut out here for oneway functions and async
++    if (tfunction->is_oneway() || gen_async_) {
+       f_service_ <<
+         indent() << "return" << endl;
+       indent_down();
+@@ -2768,6 +2870,7 @@ THRIFT_REGISTER_GENERATOR(py, "Python",
+ "    new_style:       Generate new-style classes.\n" \
+ "    twisted:         Generate Twisted-friendly RPC services.\n" \
+ "    tornado:         Generate code for use with Tornado.\n" \
++"    async:           Generate asynchronous services.\n" \
+ "    utf8strings:     Encode/decode strings using utf8 in the generated code.\n" \
+ "    slots:           Generate code using slots for instance members.\n" \
+ "    dynamic:         Generate dynamic code, less code generated but slower.\n" \
+diff --git a/lib/py/src/Thrift.py b/lib/py/src/Thrift.py
+index 9890af7..93b5286 100644
+--- a/lib/py/src/Thrift.py
++++ b/lib/py/src/Thrift.py
+@@ -71,6 +71,18 @@ class TProcessor:
+ 
+   def process(iprot, oprot):
+     pass
++  
++  
++class TAsyncProcessor:
++  """Base class for asynchronous procsessor, which works on two streams."""
++
++  def process(iprot, oprot, finished):
++    """
++    Parameters:
++    - finished - Zero arguments callback, which should be called once request has been processed
++                 and response has been written onto output stream.
++    """
++    pass
+ 
+ 
+ class TException(Exception):
+diff --git a/lib/py/src/server/TAsyncServer.py b/lib/py/src/server/TAsyncServer.py
+new file mode 100644
+index 0000000..a357dd6
+--- /dev/null
++++ b/lib/py/src/server/TAsyncServer.py
+@@ -0,0 +1,54 @@
++#
++# Licensed to the Apache Software Foundation (ASF) under one
++# or more contributor license agreements. See the NOTICE file
++# distributed with this work for additional information
++# regarding copyright ownership. The ASF licenses this file
++# to you under the Apache License, Version 2.0 (the
++# "License"); you may not use this file except in compliance
++# with the License. You may obtain a copy of the License at
++#
++#   http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing,
++# software distributed under the License is distributed on an
++# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++# KIND, either express or implied. See the License for the
++# specific language governing permissions and limitations
++# under the License.
++#
++"""Implementation of asynchronous server.
++
++The main idea of the server is to receive and send requests
++only from main thread and to have only one additional thread for
++processing thrift's requests.
++"""
++import functools
++
++from thrift.server.TNonblockingServer import Worker, TNonblockingServer
++
++__all__ = ['TAsyncServer']
++
++class WorkerAsync(Worker):
++    def _process(self, iprot, oprot, otrans, callback):
++        self.processor.process(iprot, oprot, functools.partial(self._fire_callback, callback, otrans))
++
++    def _fire_callback(self, callback, otrans):
++        """
++        Postponed evaluation of otrans.getvalue()
++        """
++        callback(True, otrans.getvalue())
++
++
++class TAsyncServer(TNonblockingServer):
++    """Asynchronous server."""
++    def __init__(self, processor, lsocket, inputProtocolFactory=None, 
++                 outputProtocolFactory=None, timeOut = None):
++        TNonblockingServer.__init__(self, processor, lsocket,
++                                    inputProtocolFactory=inputProtocolFactory, outputProtocolFactory=outputProtocolFactory,
++                                    threads=1, timeOut=timeOut)
++
++    def start_workers(self):
++        thread = WorkerAsync()
++        thread.prepare(self.tasks, self.processor)
++        thread.setDaemon(True)
++        thread.start()
+diff --git a/lib/py/src/server/TNonblockingServer.py b/lib/py/src/server/TNonblockingServer.py
+index fa478d0..0eea014 100644
+--- a/lib/py/src/server/TNonblockingServer.py
++++ b/lib/py/src/server/TNonblockingServer.py
+@@ -40,23 +40,53 @@ __all__ = ['TNonblockingServer']
+ class Worker(threading.Thread):
+     """Worker is a small helper to process incoming connection."""
+ 
+-    def __init__(self, queue):
++    def __init__(self):
+         threading.Thread.__init__(self)
++        self.prepared = False
++        self.queue = None
++        self.processor = None
++
++    def prepare(self, queue, processor):
++        self.prepared = True
+         self.queue = queue
++        self.processor = processor
++
++    def step(self):
++      """
++      This method is being called once every request or after timeOut.
++      It is designed to allow user for processing his own events in the same thread
++      as processing Thrift's requests
++      """
++      pass
+ 
+     def run(self):
+         """Process queries from task queue, stop if processor is None."""
++        assert self.prepared, "You have to call prepare before starting the Worker"
++
+         while True:
+             try:
+-                processor, iprot, oprot, otrans, callback = self.queue.get()
+-                if processor is None:
++                self.step()
++                #never use here self.queue.get(True, timeOut). It's more then 3 times
++                #slower (in terms of request per seconds), then version without timeouts
++                #That is the reason for using timeOut in select.select call, which is
++                #being handled by much faster C extension 
++                iprot, oprot, otrans, callback = self.queue.get(True)
++                if iprot is None:
++                  if oprot:
++                    #close
+                     break
+-                processor.process(iprot, oprot)
+-                callback(True, otrans.getvalue())
++                  else:
++                    #timeout
++                    continue
++                self._process(iprot, oprot, otrans, callback)
+             except Exception:
+                 logging.exception("Exception while processing request")
+                 callback(False, '')
+ 
++    def _process(self, iprot, oprot, otrans, callback):
++        self.processor.process(iprot, oprot)
++        callback(True, otrans.getvalue())
++
+ WAIT_LEN = 0
+ WAIT_MESSAGE = 1
+ WAIT_PROCESS = 2
+@@ -220,14 +250,20 @@ class Connection:
+ 
+ 
+ class TNonblockingServer:
++    CLOSE_WORKER_MSG = [None, True, True, True]
++    TIMEOUT_WORKER_MSG = [None, False, False, False]
+     """Non-blocking server."""
+-
+     def __init__(self,
+                  processor,
+                  lsocket,
+                  inputProtocolFactory=None,
+                  outputProtocolFactory=None,
+-                 threads=10):
++                 threads=10,
++                 timeOut=None):
++        """
++        Parameters:
++         - timeOut - timeOut, after which, one Worker will execute step() method
++        """
+         self.processor = processor
+         self.socket = lsocket
+         self.in_protocol = inputProtocolFactory or TBinaryProtocolFactory()
+@@ -237,7 +273,7 @@ class TNonblockingServer:
+         self.tasks = Queue.Queue()
+         self._read, self._write = socket.socketpair()
+         self.prepared = False
+-        self._stop = False
++        self.timeOut = timeOut
+ 
+     def setNumThreads(self, num):
+         """Set the number of worker threads that should be created."""
+@@ -250,11 +286,15 @@ class TNonblockingServer:
+         if self.prepared:
+             return
+         self.socket.listen()
++        self.start_workers()
++        self.prepared = True
++
++    def start_workers(self):
+         for _ in xrange(self.threads):
+-            thread = Worker(self.tasks)
++            thread = Worker()
++            thread.prepare(self.tasks, self.processor)
+             thread.setDaemon(True)
+             thread.start()
+-        self.prepared = True
+ 
+     def wake_up(self):
+         """Wake up main thread.
+@@ -295,7 +335,7 @@ class TNonblockingServer:
+                 writable.append(connection.fileno())
+             if connection.is_closed():
+                 del self.clients[i]
+-        return select.select(readable, writable, readable)
++        return select.select(readable, writable, readable, self.timeOut)
+ 
+     def handle(self):
+         """Handle requests.
+@@ -320,18 +360,25 @@ class TNonblockingServer:
+                     otransport = TTransport.TMemoryBuffer()
+                     iprot = self.in_protocol.getProtocol(itransport)
+                     oprot = self.out_protocol.getProtocol(otransport)
+-                    self.tasks.put([self.processor, iprot, oprot,
+-                                    otransport, connection.ready])
++                    self.tasks.put([iprot, oprot, otransport,
++                                    connection.ready])
+         for writeable in wset:
+             self.clients[writeable].write()
+         for oob in xset:
+             self.clients[oob].close()
+             del self.clients[oob]
+ 
++        if len(rset) + len(wset) + len(xset) == 0:
++          self._timeout_worker()
++
++    def _timeout_worker(self):
++        #Check comment in Worker::run method
++        self.tasks.put(self.TIMEOUT_WORKER_MSG)
++
+     def close(self):
+         """Closes the server."""
+         for _ in xrange(self.threads):
+-            self.tasks.put([None, None, None, None, None])
++            self.tasks.put(self.CLOSE_WORKER_MSG)
+         self.socket.close()
+         self.prepared = False
+ 
+diff --git a/lib/py/test/RunTests.py b/lib/py/test/RunTests.py
+new file mode 100755
+index 0000000..0be6efd
+--- /dev/null
++++ b/lib/py/test/RunTests.py
+@@ -0,0 +1,12 @@
++#!/usr/bin/python
++
++# Author: Piotr Nowojski
++#
++# Run all unittests
++
++import nose
++import sys
++sys.path.insert(0, "../")
++
++if __name__ == '__main__':
++    nose.run(argv=sys.argv)
+diff --git a/lib/py/test/server/__init__.py b/lib/py/test/server/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/lib/py/test/server/test_TNonblockingServer.py b/lib/py/test/server/test_TNonblockingServer.py
+new file mode 100644
+index 0000000..1fd61b9
+--- /dev/null
++++ b/lib/py/test/server/test_TNonblockingServer.py
+@@ -0,0 +1,53 @@
++import unittest
++import Queue
++from src.server.TNonblockingServer import Worker, TNonblockingServer
++
++class MockProcessor:
++    """
++    MockProcessor for testing TNonblockingServer.Worker. It is multiplying
++    both arguments of process method and adds the result on self.result
++    """
++    def __init__(self):
++        self.fail = False #when set to True, process will always rise
++        self.result = 0
++
++    def process(self, a, b):
++        if self.fail:
++            raise Exception("MockProcessor::process failed as expected")
++        self.result += a * b
++
++class MockOTrans:
++    def getvalue(self):
++        return 42
++
++class MockCallback:
++    def __init__(self):
++        self.successCount = 0
++
++    def callback(self, success, value):
++        if success and value == 42:
++            self.successCount += 1
++
++class TestWorker(unittest.TestCase):
++
++    def test_processing(self):
++        worker = Worker()
++        processor = MockProcessor()
++        queue = Queue.Queue()
++
++        worker.prepare(queue, processor)
++        worker.setDaemon(True)
++        worker.start()
++
++        expectedResult = 0
++        callback = MockCallback()
++
++        for i in xrange(10):
++          queue.put([i, i + 1, MockOTrans(), callback.callback])
++          expectedResult += i * (i + 1)
++
++        queue.put(TNonblockingServer.CLOSE_WORKER_MSG)
++
++        worker.join(5.0)
++        self.assertFalse(worker.isAlive())
++        self.assertEqual(callback.successCount, 10)
+diff --git a/tutorial/py.async/PythonClient.py b/tutorial/py.async/PythonClient.py
+new file mode 100755
+index 0000000..6c1f0c4
+--- /dev/null
++++ b/tutorial/py.async/PythonClient.py
+@@ -0,0 +1,91 @@
++#!/usr/bin/env python
++
++#
++# Licensed to the Apache Software Foundation (ASF) under one
++# or more contributor license agreements. See the NOTICE file
++# distributed with this work for additional information
++# regarding copyright ownership. The ASF licenses this file
++# to you under the Apache License, Version 2.0 (the
++# "License"); you may not use this file except in compliance
++# with the License. You may obtain a copy of the License at
++#
++#   http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing,
++# software distributed under the License is distributed on an
++# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++# KIND, either express or implied. See the License for the
++# specific language governing permissions and limitations
++# under the License.
++#
++
++import sys, glob
++sys.path.append('gen-py')
++sys.path.insert(0, glob.glob('../../lib/py/build/lib.*')[0])
++
++from sleep import SleepingCalculator
++from tutorial.ttypes import *
++
++from thrift import Thrift
++from thrift.transport import TSocket
++from thrift.transport import TTransport
++from thrift.protocol import TBinaryProtocol
++
++try:
++
++  # Make socket
++  transport = TSocket.TSocket('localhost', 9090)
++  
++  # Buffering is critical. Raw sockets are very slow
++  transport = TTransport.TBufferedTransport(transport)
++  transport = TTransport.TFramedTransport(transport)
++  
++  # Wrap in a protocol
++  protocol = TBinaryProtocol.TBinaryProtocol(transport)
++
++  # Create a client to use the protocol encoder
++  client = SleepingCalculator.Client(protocol)
++
++  # Connect!
++  transport.open()
++
++  client.ping()
++  print 'ping()'
++
++  sum = client.add(1,1)
++  print '1+1=%d' % (sum)
++
++  work = Work()
++
++  work.op = Operation.DIVIDE
++  work.num1 = 1
++  work.num2 = 0
++
++  try:
++    quotient = client.calculate(1, work)
++    print 'Whoa? You know how to divide by zero?'
++  except InvalidOperation, io:
++    print 'InvalidOperation: %r' % io
++
++  work.op = Operation.SUBTRACT
++  work.num1 = 15
++  work.num2 = 10
++
++  diff = client.calculate(1, work)
++  print '15-10=%d' % (diff)
++
++  log = client.getStruct(1)
++  print 'Check log: %s' % (log.value)
++
++  client.zip()
++  print "zip()"
++  
++  durationArg = 1.5
++  duration = client.sleep(durationArg)
++  print "sleep(%s) = %s" % (durationArg, duration)
++  
++  # Close!
++  transport.close()
++
++except NotImplementedError, tx:
++  print '%s' % (tx.message)
+diff --git a/tutorial/py.async/PythonServer.py b/tutorial/py.async/PythonServer.py
+new file mode 100755
+index 0000000..63f37ea
+--- /dev/null
++++ b/tutorial/py.async/PythonServer.py
+@@ -0,0 +1,120 @@
++#!/usr/bin/env python
++
++#
++# Licensed to the Apache Software Foundation (ASF) under one
++# or more contributor license agreements. See the NOTICE file
++# distributed with this work for additional information
++# regarding copyright ownership. The ASF licenses this file
++# to you under the Apache License, Version 2.0 (the
++# "License"); you may not use this file except in compliance
++# with the License. You may obtain a copy of the License at
++#
++#   http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing,
++# software distributed under the License is distributed on an
++# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++# KIND, either express or implied. See the License for the
++# specific language governing permissions and limitations
++# under the License.
++#
++
++import sys, glob
++import time
++import heapq
++import functools
++sys.path.append('gen-py')
++sys.path.insert(0, glob.glob('../../lib/py/build/lib.*')[0])
++
++from sleep import SleepingCalculator
++from tutorial.ttypes import *
++
++from shared.ttypes import SharedStruct
++
++from thrift.transport import TSocket
++from thrift.transport import TTransport
++from thrift.protocol import TBinaryProtocol
++from thrift.server import TAsyncServer
++
++class SleepingCalculatorHandler(TAsyncServer.WorkerAsync):
++  def __init__(self):
++    TAsyncServer.WorkerAsync.__init__(self)
++    self._sleepingTasks = []
++    self.log = {}
++
++  def ping(self, onCompleted, onError):
++    print 'ping()'
++    onCompleted()
++
++  def add(self, n1, n2, onCompleted, onError):
++    print 'add(%d,%d)' % (n1, n2)
++    onCompleted(n1+n2)
++
++  def calculate(self, logid, work, onCompleted, onError):
++    print 'calculate(%d, %r)' % (logid, work)
++
++    if work.op == Operation.ADD:
++      val = work.num1 + work.num2
++    elif work.op == Operation.SUBTRACT:
++      val = work.num1 - work.num2
++    elif work.op == Operation.MULTIPLY:
++      val = work.num1 * work.num2
++    elif work.op == Operation.DIVIDE:
++      if work.num2 == 0:
++        x = InvalidOperation()
++        x.what = work.op
++        x.why = 'Cannot divide by 0'
++        raise x
++      val = work.num1 / work.num2
++    else:
++      x = InvalidOperation()
++      x.what = work.op
++      x.why = 'Invalid operation'
++      raise x
++
++    log = SharedStruct()
++    log.key = logid
++    log.value = '%d' % (val)
++    self.log[logid] = log
++
++    onCompleted(val)
++
++  def getStruct(self, key, onCompleted, onError):
++    print 'getStruct(%d)' % (key)
++    onCompleted(self.log[key])
++
++  def zip(self):
++    print 'zip()'
++    
++  def sleep(self, duration, onCompleted, onError):
++    nowTS = time.time()
++    heapq.heappush(self._sleepingTasks, (nowTS + duration, onCompleted, duration))
++    
++  def step(self):
++    self._checkCompleted()  
++  
++  def _checkCompleted(self):
++    nowTS = time.time()
++    
++    while len(self._sleepingTasks) > 0 and self._sleepingTasks[0][0] < nowTS:
++      _, onCompleted, duration = heapq.heappop(self._sleepingTasks)
++      onCompleted(duration)
++
++handler = SleepingCalculatorHandler()
++processor = SleepingCalculator.Processor(handler)
++transport = TSocket.TServerSocket(port=9090)
++tfactory = TTransport.TFramedTransportFactory()
++pfactory = TBinaryProtocol.TBinaryProtocolFactory()
++
++class SleepingCalculatorServer(TAsyncServer.TAsyncServer):
++  def start_workers(self):
++    print "SleepingCalculatorServer::start_workers"
++    handler.prepare(self.tasks, self.processor)
++    handler.setDaemon(True)
++    handler.start()
++
++server = SleepingCalculatorServer(processor, transport, pfactory, pfactory, timeOut=0.1)
++
++print 'Starting the server...'
++server.serve()
++print 'done.'
+diff --git a/tutorial/py.async/sleep.thrift b/tutorial/py.async/sleep.thrift
+new file mode 100644
+index 0000000..28f158c
+--- /dev/null
++++ b/tutorial/py.async/sleep.thrift
+@@ -0,0 +1,27 @@
++/*
++ * Licensed to the Apache Software Foundation (ASF) under one
++ * or more contributor license agreements. See the NOTICE file
++ * distributed with this work for additional information
++ * regarding copyright ownership. The ASF licenses this file
++ * to you under the Apache License, Version 2.0 (the
++ * "License"); you may not use this file except in compliance
++ * with the License. You may obtain a copy of the License at
++ *
++ *   http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing,
++ * software distributed under the License is distributed on an
++ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
++ * KIND, either express or implied. See the License for the
++ * specific language governing permissions and limitations
++ * under the License.
++ */
++
++include "../tutorial.thrift"
++
++service SleepingCalculator extends tutorial.Calculator {
++
++   //this method sleeps for given number of seconds, and returns it's argument
++   double sleep(1:double duration)
++
++}

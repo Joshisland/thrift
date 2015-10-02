@@ -1,4 +1,5 @@
 Thrift Protocol Structure
+====================================================================
 
 Last Modified: 2007-Jun-29
 
@@ -31,19 +32,20 @@ structure. There are some "dumb" terminals like STRING and INT
 that take the place of an actual encoding specification.
 
 They key point to notice is that ALL messages are just one wrapped
-<struct>. Depending upon the message type, the <struct> can be
+`<struct>`. Depending upon the message type, the `<struct>` can be
 interpreted as the argument list to a function, the return value
 of a function, or an exception.
 
 --------------------------------------------------------------------
 
+```
        <message> ::= <message-begin> <struct> <message-end>
 
  <message-begin> ::= <method-name> <message-type> <message-seqid>
 
    <method-name> ::= STRING
 
-  <message-type> ::= T_CALL | T_REPLY | T_EXCEPTION
+  <message-type> ::= T_CALL | T_REPLY | T_EXCEPTION | T_ONEWAY
 
  <message-seqid> ::= I32
 
@@ -94,3 +96,4 @@ of a function, or an exception.
  <set-elem-type> ::= <field-type>
 
       <set-size> ::= I32
+```

@@ -21,6 +21,7 @@ package thrift
 
 import (
 	"bytes"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -128,21 +129,22 @@ func (p *THttpClient) IsOpen() bool {
 	return p.response != nil || p.requestBuffer != nil
 }
 
-func (p *THttpClient) Peek() bool {
-	return p.IsOpen()
+func (p *THttpClient) closeResponse() error {
+	var err error
+	if p.response != nil && p.response.Body != nil {
+		err = p.response.Body.Close()
+	}
+
+	p.response = nil
+	return err
 }
 
 func (p *THttpClient) Close() error {
-	if p.response != nil && p.response.Body != nil {
-		err := p.response.Body.Close()
-		p.response = nil
-		return err
-	}
 	if p.requestBuffer != nil {
 		p.requestBuffer.Reset()
 		p.requestBuffer = nil
 	}
-	return nil
+	return p.closeResponse()
 }
 
 func (p *THttpClient) Read(buf []byte) (int, error) {
@@ -150,6 +152,9 @@ func (p *THttpClient) Read(buf []byte) (int, error) {
 		return 0, NewTTransportException(NOT_OPEN, "Response buffer is empty, no request.")
 	}
 	n, err := p.response.Body.Read(buf)
+	if n > 0 && (err == nil || err == io.EOF) {
+		return n, nil
+	}
 	return n, NewTTransportExceptionFromError(err)
 }
 
@@ -171,6 +176,9 @@ func (p *THttpClient) WriteString(s string) (n int, err error) {
 }
 
 func (p *THttpClient) Flush() error {
+	// Close any previous response body to avoid leaking connections.
+	p.closeResponse()
+
 	client := &http.Client{}
 	req, err := http.NewRequest("POST", p.url.String(), p.requestBuffer)
 	if err != nil {
@@ -183,9 +191,22 @@ func (p *THttpClient) Flush() error {
 		return NewTTransportExceptionFromError(err)
 	}
 	if response.StatusCode != http.StatusOK {
+		// Close the response to avoid leaking file descriptors.
+		response.Body.Close()
 		// TODO(pomack) log bad response
 		return NewTTransportException(UNKNOWN_TRANSPORT_EXCEPTION, "HTTP Response code: "+strconv.Itoa(response.StatusCode))
 	}
 	p.response = response
 	return nil
 }
+
+func (p *THttpClient) RemainingBytes() (num_bytes uint64) {
+	len := p.response.ContentLength 
+	if len >= 0 {
+		return uint64(len)
+	}
+	
+	const maxSize = ^uint64(0)
+	return maxSize  // the thruth is, we just don't know unless framed is used
+}
+
