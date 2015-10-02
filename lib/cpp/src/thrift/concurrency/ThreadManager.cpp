@@ -263,7 +263,7 @@ public:
         }
 
         if (active) {
-          manager_->removeExpiredTasks();
+          //manager_->removeExpiredTasks();
 
           if (!manager_->tasks_.empty()) {
             task = manager_->tasks_.front();
@@ -456,7 +456,7 @@ void ThreadManager::Impl::add(shared_ptr<Runnable> value, int64_t timeout, int64
 
   removeExpiredTasks();
   if (pendingTaskCountMax_ > 0 && (tasks_.size() >= pendingTaskCountMax_)) {
-    if (canSleep() && timeout >= 0) {
+    if (canSleep() && timeout > 0) {
       while (pendingTaskCountMax_ > 0 && tasks_.size() >= pendingTaskCountMax_) {
         // This is thread safe because the mutex is shared between monitors.
         maxMonitor_.wait(timeout);
