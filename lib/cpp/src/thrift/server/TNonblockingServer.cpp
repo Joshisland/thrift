@@ -657,7 +657,7 @@ void TNonblockingServer::TConnection::transition() {
         outputProtocol_->writeMessageEnd();
         outputProtocol_->getTransport()->writeEnd();
         outputProtocol_->getTransport()->flush();
-        GlobalOutput.printf("[ERROR] TooManyPendingTasksException: Server::process() %s", so.what());
+        //GlobalOutput.printf("[ERROR] TooManyPendingTasksException: Server::process() %s", so.what());
         if (!notifyIOThread()) {
           GlobalOutput.printf("[ERROR] server_->addTask(): failed to notifyIOThread, closing.");
           close();
@@ -1329,6 +1329,14 @@ bool TNonblockingIOThread::notify(TNonblockingServer::TConnection* conn) {
     return false;
   }
 
+  /*
+  const int kSize = sizeof(conn);
+  if (send(fd, const_cast_sockopt(&conn), kSize, 0) != kSize) {
+      return false;
+  }
+
+  fd_set wfds, efds;
+  */
   int ret = -1;
   long kSize = sizeof(conn);
   const char * pos = (const char *)const_cast_sockopt(&conn);
