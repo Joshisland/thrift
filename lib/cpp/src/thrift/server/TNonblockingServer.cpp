@@ -1197,7 +1197,7 @@ bool TNonblockingServer::drainPendingTask() {
 
 void TNonblockingServer::expireClose(boost::shared_ptr<Runnable> task) {
   TConnection* connection = static_cast<TConnection::Task*>(task.get())->getTConnection();
-  GlobalOutput.printf("expireClose %p, %p, %d", connection, connection->getServer(), connection->getState());
+  //GlobalOutput.printf("expireClose %p, %p, %d", connection, connection->getServer(), connection->getState());
   assert(connection && connection->getServer() && connection->getState() == APP_WAIT_TASK);
   connection->forceClose();
 }
