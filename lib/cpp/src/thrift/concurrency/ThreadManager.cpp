@@ -252,7 +252,6 @@ public:
       if (++manager_->workerCount_ == manager_->workerMaxCount_) {
         manager_->workerMonitor_.notify();
       }
-    }
 
     while (active) {
       /**
