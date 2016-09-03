@@ -605,6 +605,7 @@ void TNonblockingServer::TConnection::transition() {
           GlobalOutput.printf("[ERROR] server_->addTask(): failed to notifyIOThread, closing.");
           close();
         }
+        return;
       } catch(const std::exception& e) {
         GlobalOutput.printf("[ERROR] server_->addTask() raised an exception: %s", e.what());
       } catch(...) {
