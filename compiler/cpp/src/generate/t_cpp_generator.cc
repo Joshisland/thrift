@@ -4082,7 +4082,7 @@ string t_cpp_generator::type_name(t_type* ttype, bool in_typedef, bool arg) {
       cname = tcontainer->get_cpp_name();
     } else if (ttype->is_map()) {
       t_map* tmap = (t_map*)ttype;
-      cname = "std::map<" + type_name(tmap->get_key_type(), in_typedef) + ", "
+      cname = "std::unordered_map<" + type_name(tmap->get_key_type(), in_typedef) + ", "
               + type_name(tmap->get_val_type(), in_typedef) + "> ";
     } else if (ttype->is_set()) {
       t_set* tset = (t_set*)ttype;
