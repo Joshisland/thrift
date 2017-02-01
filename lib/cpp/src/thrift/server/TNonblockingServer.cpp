@@ -496,7 +496,7 @@ void TNonblockingServer::TConnection::workSocket() {
   case SOCKET_RECV:
     // It is an error to be in this state if we already have all the data
     if (!(readBufferPos_ < readWant_)) {
-      GlobalOutput.printf("TNonblockingServer: frame size too short");
+      GlobalOutput.printf("TNonblockingServer: frame size too short: readBufferPos_(%d), readWant_(%d)", readBufferPos_, readWant_);
       close();
       return;
     }
@@ -788,7 +788,10 @@ void TNonblockingServer::TConnection::transition() {
       auto* newBuffer = (uint8_t*)std::realloc(readBuffer_, newSize);
       if (newBuffer == nullptr) {
         // nothing else to be done...
-        throw std::bad_alloc();
+        GlobalOutput.printf("server::transition() ERROR: failed to realloc size(%s)", newSize);
+        close();
+        return;
+        //throw std::bad_alloc();
       }
       readBuffer_ = newBuffer;
       readBufferSize_ = newSize;
