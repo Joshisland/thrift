@@ -471,7 +471,6 @@ void TNonblockingServer::TConnection::workSocket() {
     //assert(readBufferPos_ < readWant_);
     if ( readBufferPos_ >= readWant_ ) {
         GlobalOutput.printf("TConnection::workSocket() ERROR(SOCKET_RECV): readBufferPos_(%d), readWant_(%d)", readBufferPos_, readWant_);
-        close();
         return;
     }
 
