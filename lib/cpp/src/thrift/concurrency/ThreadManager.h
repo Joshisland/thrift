@@ -123,6 +123,11 @@ public:
   virtual size_t pendingTaskCountMax() const = 0;
 
   /**
+   * Sets the maximum pending task count.  0 indicates no maximum
+   */
+  virtual void pendingTaskCountMax(const size_t value) = 0;
+
+  /**
    * Gets the number of tasks which have been expired without being run.
    */
   virtual size_t expiredTaskCount() = 0;
