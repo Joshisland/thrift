@@ -435,7 +435,7 @@ void TNonblockingServer::TConnection::workSocket() {
       }
       readBufferPos_ += fetch;
     } catch (TTransportException& te) {
-      GlobalOutput.printf("TConnection::workSocket(): %s", te.what());
+      GlobalOutput.printf("TConnection::workSocket()::SOCKET_RECV_FRAMING: %s", te.what());
       close();
 
       return;
@@ -479,7 +479,7 @@ void TNonblockingServer::TConnection::workSocket() {
       fetch = readWant_ - readBufferPos_;
       got = tSocket_->read(readBuffer_ + readBufferPos_, fetch);
     } catch (TTransportException& te) {
-      GlobalOutput.printf("TConnection::workSocket(): %s", te.what());
+      GlobalOutput.printf("TConnection::workSocket()::SOCKET_RECV: %s", te.what());
       close();
 
       return;
@@ -519,7 +519,7 @@ void TNonblockingServer::TConnection::workSocket() {
       left = writeBufferSize_ - writeBufferPos_;
       sent = tSocket_->write_partial(writeBuffer_ + writeBufferPos_, left);
     } catch (TTransportException& te) {
-      GlobalOutput.printf("TConnection::workSocket(): %s ", te.what());
+      GlobalOutput.printf("TConnection::workSocket()::SOCKET_SEND: %s ", te.what());
       close();
       return;
     }
