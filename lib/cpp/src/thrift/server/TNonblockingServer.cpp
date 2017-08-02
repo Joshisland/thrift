@@ -550,7 +550,7 @@ void TNonblockingServer::TConnection::workSocket() {
       left = writeBufferSize_ - writeBufferPos_;
       sent = tSocket_->write_partial(writeBuffer_ + writeBufferPos_, left);
     } catch (TTransportException& te) {
-      GlobalOutput.printf("TConnection::workSocket(): %s ", te.what());
+      GlobalOutput.printf("TConnection::workSocket()::SOCKET_SEND: %s ", te.what());
       close();
       return;
     }
