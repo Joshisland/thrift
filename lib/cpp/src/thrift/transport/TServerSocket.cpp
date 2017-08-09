@@ -60,10 +60,6 @@
 #endif // _WIN32
 #endif
 
-#if defined(_WIN32) && (_WIN32_WINNT < 0x0600)
-  #define AI_ADDRCONFIG 0x0400
-#endif
-
 template <class T>
 inline const SOCKOPT_CAST_T* const_cast_sockopt(const T* v) {
   return reinterpret_cast<const SOCKOPT_CAST_T*>(v);
@@ -613,7 +609,7 @@ shared_ptr<TTransport> TServerSocket::acceptImpl() {
   THRIFT_SOCKET clientSocket
       = ::accept(serverSocket_, (struct sockaddr*)&clientAddress, (socklen_t*)&size);
 
-  if (clientSocket == -1) {
+  if (clientSocket == THRIFT_INVALID_SOCKET) {
     int errno_copy = THRIFT_GET_SOCKET_ERROR;
     GlobalOutput.perror("TServerSocket::acceptImpl() ::accept() ", errno_copy);
     throw TTransportException(TTransportException::UNKNOWN, "accept()", errno_copy);

@@ -53,10 +53,6 @@
 #endif // _WIN32
 #endif
 
-#if defined(_WIN32) && (_WIN32_WINNT < 0x0600)
-  #define AI_ADDRCONFIG 0x0400
-#endif
-
 template <class T>
 inline const SOCKOPT_CAST_T* const_cast_sockopt(const T* v) {
   return reinterpret_cast<const SOCKOPT_CAST_T*>(v);
@@ -221,7 +217,6 @@ bool TSocket::peek() {
      * the other side
      */
     if (errno_copy == THRIFT_ECONNRESET) {
-      close();
       return false;
     }
 #endif
@@ -657,7 +652,6 @@ uint32_t TSocket::write_partial(const uint8_t* buf, uint32_t len) {
 
     if (errno_copy == THRIFT_EPIPE || errno_copy == THRIFT_ECONNRESET
         || errno_copy == THRIFT_ENOTCONN) {
-      close();
       throw TTransportException(TTransportException::NOT_OPEN, "write() send()", errno_copy);
     }
 
@@ -767,7 +761,7 @@ void TSocket::setSendTimeout(int ms) {
 void TSocket::setKeepAlive(bool keepAlive) {
   keepAlive_ = keepAlive;
 
-  if (socket_ == -1) {
+  if (socket_ == THRIFT_INVALID_SOCKET) {
     return;
   }
 
