@@ -637,7 +637,7 @@ final class TFileWriterTransport : TBaseTransport {
   override void close() {
     if (!isOpen) return;
 
-    prioritySend(writerThread_, ShutdownMessage(), thisTid); // FIXME: Should use normal send here.
+    send(writerThread_, ShutdownMessage(), thisTid);
     receive((ShutdownMessage msg, Tid tid){});
     isOpen_ = false;
   }
@@ -847,7 +847,7 @@ private {
         (immutable(ubyte)[] data) {
           while (errorOpening) {
             logError("Writer thread going to sleep for %s µs due to IO errors",
-              ioErrorSleepDuration.fracSec.usecs);
+              ioErrorSleepDuration.total!"usecs");
 
             // Sleep for ioErrorSleepDuration, being ready to be interrupted
             // by shutdown requests.

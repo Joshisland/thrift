@@ -19,13 +19,15 @@
 # under the License.
 #
 
-require 5.6.0;
+use 5.10.0;
 use strict;
 use warnings;
 use Data::Dumper;
 use Getopt::Long qw(GetOptions);
 use Time::HiRes qw(gettimeofday);
 
+$SIG{INT} = \&sigint_handler;
+ 
 use lib '../../lib/perl/lib';
 use lib 'gen-perl';
 
@@ -33,10 +35,13 @@ use Thrift;
 use Thrift::BinaryProtocol;
 use Thrift::BufferedTransport;
 use Thrift::FramedTransport;
+use Thrift::MultiplexedProcessor;
 use Thrift::SSLServerSocket;
 use Thrift::ServerSocket;
 use Thrift::Server;
+use Thrift::UnixServerSocket;
 
+use ThriftTest::SecondService;
 use ThriftTest::ThriftTest;
 use ThriftTest::Types;
 
@@ -49,7 +54,9 @@ Usage: $0 [OPTIONS]
 Options:                          (default)
   --ca                                         Certificate authority file (optional).
   --cert                                       Certificate file.
-                                               Required if using --ssl.                                               
+                                               Required if using --ssl.
+  --ciphers                                    Acceptable cipher list.
+  --domain-socket <file>                       Use a unix domain socket.
   --help                                       Show usage.
   --key                                        Private key file for certificate.
                                                Required if using --ssl and private key is
@@ -58,7 +65,7 @@ Options:                          (default)
   --protocol {binary}             binary       Protocol to use.
   --ssl                                        If present, use SSL/TLS.
   --transport {buffered|framed}   buffered     Transport to use.
-                                   
+
 EOF
 }
 
@@ -71,6 +78,8 @@ my %opts = (
 GetOptions(\%opts, qw (
     ca=s
     cert=s
+    ciphers=s
+    domain-socket=s
     help
     host=s
     key=s
@@ -91,9 +100,14 @@ if ($opts{ssl} and not defined $opts{cert}) {
 }
 
 my $handler = new ThriftTestHandler();
+my $handler2 = new SecondServiceHandler();
 my $processor = new ThriftTest::ThriftTestProcessor($handler);
+my $processor2 = new ThriftTest::SecondServiceProcessor($handler2);
 my $serversocket;
-if ($opts{ssl}) {
+if ($opts{"domain-socket"}) {
+    unlink($opts{"domain-socket"});
+    $serversocket = new Thrift::UnixServerSocket($opts{"domain-socket"});
+} elsif ($opts{ssl}) {
     $serversocket = new Thrift::SSLServerSocket(\%opts);
 } else {
     $serversocket = new Thrift::ServerSocket(\%opts);
@@ -108,22 +122,40 @@ if ($opts{transport} eq 'buffered') {
     exit 1;
 }
 my $protocol;
-if ($opts{protocol} eq 'binary') {
+if ($opts{protocol} eq 'binary' || $opts{protocol} eq 'multi') {
     $protocol = new Thrift::BinaryProtocolFactory();
 } else {
     usage();
     exit 1;
 }
 
+if (index($opts{protocol}, 'multi') == 0) {
+  my $newProcessor = new Thrift::MultiplexedProcessor($protocol);
+  $newProcessor->defaultProcessor($processor);
+  $newProcessor->registerProcessor("ThriftTest", $processor);
+  $newProcessor->registerProcessor("SecondService", $processor2);
+  $processor = $newProcessor;
+}
+
 my $ssltag = '';
 if ($opts{ssl}) {
     $ssltag = "(SSL)";
 }
+my $listening_on = "$opts{port} $ssltag";
+if ($opts{"domain-socket"}) {
+    $listening_on = $opts{"domain-socket"};
+}
 my $server = new Thrift::SimpleServer($processor, $serversocket, $transport, $protocol);
-print "Starting \"simple\" server ($opts{transport}/$opts{protocol}) listen on: $opts{port} $ssltag\n";
+print "Starting \"simple\" server ($opts{transport}/$opts{protocol}) listen on: $listening_on\n";
 $server->serve();
+print "done.\n";
 
-###    
+sub sigint_handler {
+  print "received SIGINT, stopping...\n";
+  $server->stop();
+}
+
+###
 ### Test server implementation
 ###
 
@@ -138,7 +170,7 @@ sub new {
 }
 
 sub testVoid() {
-  print("testVoid()\n"); 
+  print("testVoid()\n");
 }
 
 sub testString() {
@@ -270,7 +302,7 @@ sub testSet() {
         print(", ");
     }
     print("$key");
-    push($result, $key);
+    push(@arr, $key);
   }
   print("})\n");
   return $result;
@@ -310,7 +342,7 @@ sub testTypedef() {
 sub testMapMap() {
   my $self = shift;
   my $hello = shift;
-  
+
   printf("testMapMap(%d)\n", $hello);
   my $result = { 4 => { 1 => 1, 2 => 2, 3 => 3, 4 => 4 }, -4 => { -1 => -1, -2 => -2, -3 => -3, -4 => -4 } };
   return $result;
@@ -342,7 +374,7 @@ sub testMulti() {
   my $arg3 = shift;
   my $arg4 = shift;
   my $arg5 = shift;
-  
+
   print("testMulti()\n");
   return new ThriftTest::Xtruct({string_thing => "Hello2", byte_thing => $arg0, i32_thing => $arg1, i64_thing => $arg2});
 }
@@ -378,11 +410,29 @@ sub testMultiException() {
 
 sub testOneway() {
   my $self = shift;
-  my $sleepFor = shift;
-  print("testOneway($sleepFor): Sleeping...\n");
-  sleep $sleepFor;
-  print("testOneway($sleepFor): done sleeping!\n");
+  my $num = shift;
+  print("testOneway($num): received\n");
 }
 
+###
+### Test server implementation
+###
+
+package SecondServiceHandler;
+
+use base qw( ThriftTest::SecondServiceIf );
+
+sub new {
+    my $classname = shift;
+    my $self = {};
+    return bless($self, $classname);
+}
+
+sub secondtestString() {
+  my $self = shift;
+  my $thing = shift;
+  print("testString($thing)\n");
+  return "testString(\"" . $thing . "\")";
+}
 
 1;

@@ -17,9 +17,7 @@
 # under the License.
 #
 
-THRIFT = $(top_builddir)/compiler/cpp/thrift
-
-stubs: ../ConstantsDemo.thrift ../DebugProtoTest.thrift ../ThriftTest.thrift ../Include.thrift
+stubs: $(THRIFT) ../ConstantsDemo.thrift ../DebugProtoTest.thrift ../ThriftTest.thrift ../Include.thrift
 	$(THRIFT) --gen hs ../ConstantsDemo.thrift
 	$(THRIFT) --gen hs ../DebugProtoTest.thrift
 	$(THRIFT) --gen hs ../ThriftTest.thrift
