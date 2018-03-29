@@ -278,8 +278,8 @@ public:
   }
   // two functions below are used for getting relative module working
   // they need to know current program_ to decide on relative import
-  std::string get_real_py_module_rel(const t_program* program, bool gen_twisted) const;
-  std::string get_real_py_module_as(const t_program* program, bool gen_twisted) const;
+  std::string get_real_py_module_rel(const t_program* program, bool gen_twisted, std::string package_dir="") const;
+  std::string get_real_py_module_as(const t_program* program, bool gen_twisted, std::string package_dir="") const;
 
 private:
 
@@ -1134,7 +1134,6 @@ void t_py_generator::generate_service(t_service* tservice) {
   f_service_ << py_autogen_comment() << endl << py_imports() << endl;
 
   if (tservice->get_extends() != NULL) {
-    t_program* program = tservice->get_extends()->get_program();
     if (gen_relative_imports_){
       f_service_ << "from " << get_real_py_module_rel(tservice->get_extends()->get_program(), gen_twisted_, package_prefix_) 
                  << " import " << tservice->get_extends()->get_name() 
@@ -2880,7 +2879,7 @@ static std::string get_common_module_namespace(const std::string & a, const std:
 }
 
 
-std::string t_py_generator::get_real_py_module_rel(const t_program* program, bool gen_twisted) const {
+std::string t_py_generator::get_real_py_module_rel(const t_program* program, bool gen_twisted, std::string package_dir) const {
   if(gen_twisted) {
     // we use absolute path just as in get_real_py_module function
     std::string twisted_module = program->get_namespace("py.twisted");
@@ -2896,11 +2895,11 @@ std::string t_py_generator::get_real_py_module_rel(const t_program* program, boo
   // real_module may share some parts with our own program:
   std::string our_module = program_->get_namespace("py");
   if (our_module.empty()) {
-    return real_module;
+    return package_dir + real_module;
   }
   std::string shared_prefix = get_common_module_namespace(our_module, real_module);
   if (shared_prefix.empty()){
-    return real_module;
+    return package_dir + real_module;
   }
   // compute the number of "."
   unsigned dot_count = 1;
@@ -2910,11 +2909,12 @@ std::string t_py_generator::get_real_py_module_rel(const t_program* program, boo
     }
   }
   std::string result(dot_count, '.');
-  result.append(real_module.substr(1 + shared_prefix.size())); // skip shared .
+  if ( real_module.size() > shared_prefix.size() )
+    result.append(real_module.substr(1 + shared_prefix.size())); // skip shared .
   return result;
 }
 
-std::string t_py_generator::get_real_py_module_as(const t_program* program, bool gen_twisted) const {
+std::string t_py_generator::get_real_py_module_as(const t_program* program, bool gen_twisted, std::string package_dir) const {
   if(gen_twisted) {
     // we don't touch twisted modules = they are absolute imports anyways
     std::string twisted_module = program->get_namespace("py.twisted");
@@ -2929,7 +2929,7 @@ std::string t_py_generator::get_real_py_module_as(const t_program* program, bool
   }
   // replace all . with _ 
   std::replace(real_module.begin(), real_module.end(), '.', '_');
-  return real_module;
+  return package_dir + real_module;
 }
 
 
@@ -2949,7 +2949,7 @@ THRIFT_REGISTER_GENERATOR(
     "    dynimport='from foo.bar import CLS'\n"
     "                     Add an import line to generated code to find the dynbase class.\n"
     "    relative_imports:\n"
-    "                     Use relative imports from . import ttypes instead of import ttypes.\n")
+    "                     Use relative imports from . import ttypes instead of import ttypes.\n"
     "    package_prefix='top.package.'\n"
     "                     Package prefix for generated files.\n"
     "    old_style:       Deprecated. Generate old-style classes.\n")

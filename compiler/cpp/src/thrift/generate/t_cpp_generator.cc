@@ -60,7 +60,7 @@ public:
 
     gen_pure_enums_ = false;
     use_include_prefix_ = false;
-    use_guard_include_prefix_ = false;
+    include_guard_prefix_ = "";
     gen_cob_style_ = false;
     gen_no_client_completion_ = false;
     gen_no_default_operators_ = false;
@@ -76,7 +76,7 @@ public:
       } else if( iter->first.compare("include_prefix") == 0) {
         use_include_prefix_ = true;
       } else if( iter->first.compare("include_guard_prefix") == 0) {
-        use_include_guard_prefix_ = true;
+        include_guard_prefix_ = iter->second;
       } else if( iter->first.compare("cob_style") == 0) {
         gen_cob_style_ = true;
       } else if( iter->first.compare("no_client_completion") == 0) {

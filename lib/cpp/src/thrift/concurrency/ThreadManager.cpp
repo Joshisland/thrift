@@ -265,10 +265,8 @@ public:
 
       while (active && manager_->tasks_.empty()) {
         manager_->idleCount_++;
-        idle_ = true;
         manager_->monitor_.wait();
         active = isActive();
-        idle_ = false;
         manager_->idleCount_--;
       }
 
