@@ -60,6 +60,7 @@ public:
 
     gen_pure_enums_ = false;
     use_include_prefix_ = false;
+    include_guard_prefix_ = "";
     gen_cob_style_ = false;
     gen_no_client_completion_ = false;
     gen_no_default_operators_ = false;
@@ -75,6 +76,8 @@ public:
         gen_pure_enums_ = true;
       } else if( iter->first.compare("include_prefix") == 0) {
         use_include_prefix_ = true;
+      } else if( iter->first.compare("include_guard_prefix") == 0) {
+        include_guard_prefix_ = iter->second;
       } else if( iter->first.compare("cob_style") == 0) {
         gen_cob_style_ = true;
       } else if( iter->first.compare("no_client_completion") == 0) {
@@ -314,6 +317,11 @@ private:
   std::string get_legal_program_name(std::string program_name);
 
   /**
+   * will be used to #ifndef and #define include guards.
+   */
+  std::string include_guard_prefix_;
+
+  /**
    * True if we should generate pure enums for Thrift enums, instead of wrapper classes.
    */
   bool gen_pure_enums_;
@@ -428,9 +436,9 @@ void t_cpp_generator::init_generator() {
   f_types_tcc_ << autogen_comment();
 
   // Start ifndef
-  f_types_ << "#ifndef " << program_name_ << "_TYPES_H" << endl << "#define " << program_name_
+  f_types_ << "#ifndef " << include_guard_prefix_ << program_name_ << "_TYPES_H" << endl << "#define " << include_guard_prefix_ << program_name_
            << "_TYPES_H" << endl << endl;
-  f_types_tcc_ << "#ifndef " << program_name_ << "_TYPES_TCC" << endl << "#define " << program_name_
+  f_types_tcc_ << "#ifndef " << include_guard_prefix_ << program_name_ << "_TYPES_TCC" << endl << "#define " << include_guard_prefix_ << program_name_
                << "_TYPES_TCC" << endl << endl;
 
   // Include base types
@@ -724,7 +732,7 @@ void t_cpp_generator::generate_consts(std::vector<t_const*> consts) {
     f_consts_impl << autogen_comment();
 
     // Start ifndef
-    f_consts << "#ifndef " << program_name_ << "_CONSTANTS_H" << endl << "#define " << program_name_
+    f_consts << "#ifndef " << include_guard_prefix_ << program_name_ << "_CONSTANTS_H" << endl << "#define " << include_guard_prefix_ << program_name_ 
              << "_CONSTANTS_H" << endl << endl << "#include \"" << get_include_prefix(*get_program())
              << program_name_ << "_types.h\"" << endl << endl << ns_open_ << endl << endl;
 
@@ -1861,7 +1869,7 @@ void t_cpp_generator::generate_service(t_service* tservice) {
 
   // Print header file includes
   f_header_ << autogen_comment();
-  f_header_ << "#ifndef " << svcname << "_H" << endl << "#define " << svcname << "_H" << endl
+  f_header_ << "#ifndef " << include_guard_prefix_ << svcname << "_H" << endl << "#define " << include_guard_prefix_ << svcname << "_H" << endl
             << endl;
   if (gen_cob_style_) {
     f_header_ << "#include <thrift/transport/TBufferTransports.h>" << endl // TMemoryBuffer
@@ -1909,7 +1917,7 @@ void t_cpp_generator::generate_service(t_service* tservice) {
     f_service_tcc_ << "#include \"" << get_include_prefix(*get_program()) << svcname << ".h\""
                    << endl;
 
-    f_service_tcc_ << "#ifndef " << svcname << "_TCC" << endl << "#define " << svcname << "_TCC"
+    f_service_tcc_ << "#ifndef " << include_guard_prefix_ << svcname << "_TCC" << endl << "#define " << include_guard_prefix_ << svcname << "_TCC"
                    << endl << endl;
 
     if (gen_cob_style_) {
