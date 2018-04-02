@@ -4765,6 +4765,8 @@ THRIFT_REGISTER_GENERATOR(
     "    templates:       Generate templatized reader/writer methods.\n"
     "    pure_enums:      Generate pure enums instead of wrapper classes.\n"
     "    include_prefix:  Use full include paths in generated files.\n"
+    "    include_guard_prefix:\n"
+    "                     Prefix include guards #ifndef with given string.\n"
     "    moveable_types:  Generate move constructors and assignment operators.\n"
     "    no_ostream_operators:\n"
     "                     Omit generation of ostream definitions.\n"
