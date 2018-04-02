@@ -2847,6 +2847,8 @@ THRIFT_REGISTER_GENERATOR(
     "    dynexc=CLS       Derive generated exceptions from CLS instead of TExceptionBase.\n"
     "    dynimport='from foo.bar import CLS'\n"
     "                     Add an import line to generated code to find the dynbase class.\n"
+    "    relative_imports:\n"
+    "                     Use relative imports from . import ttypes instead of import ttypes.\n"
     "    package_prefix='top.package.'\n"
     "                     Package prefix for generated files.\n"
     "    old_style:       Deprecated. Generate old-style classes.\n")
