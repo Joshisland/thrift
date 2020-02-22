@@ -42,6 +42,9 @@ type TSimpleServer struct {
 	outputTransportFactory TTransportFactory
 	inputProtocolFactory   TProtocolFactory
 	outputProtocolFactory  TProtocolFactory
+
+	// Headers to auto forward in THeaderProtocol
+	forwardHeaders []string
 }
 
 func NewTSimpleServer2(processor TProcessor, serverTransport TServerTransport) *TSimpleServer {
@@ -125,26 +128,58 @@ func (p *TSimpleServer) Listen() error {
 	return p.serverTransport.Listen()
 }
 
+// SetForwardHeaders sets the list of header keys that will be auto forwarded
+// while using THeaderProtocol.
+//
+// "forward" means that when the server is also a client to other upstream
+// thrift servers, the context object user gets in the processor functions will
+// have both read and write headers set, with write headers being forwarded.
+// Users can always override the write headers by calling SetWriteHeaderList
+// before calling thrift client functions.
+func (p *TSimpleServer) SetForwardHeaders(headers []string) {
+	size := len(headers)
+	if size == 0 {
+		p.forwardHeaders = nil
+		return
+	}
+
+	keys := make([]string, size)
+	copy(keys, headers)
+	p.forwardHeaders = keys
+}
+
+func (p *TSimpleServer) innerAccept() (int32, error) {
+	client, err := p.serverTransport.Accept()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	closed := atomic.LoadInt32(&p.closed)
+	if closed != 0 {
+		return closed, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	if client != nil {
+		p.wg.Add(1)
+		go func() {
+			defer p.wg.Done()
+			if err := p.processRequests(client); err != nil {
+				log.Println("error processing request:", err)
+			}
+		}()
+	}
+	return 0, nil
+}
+
 func (p *TSimpleServer) AcceptLoop() error {
 	for {
-		client, err := p.serverTransport.Accept()
-		p.mu.Lock()
-		if atomic.LoadInt32(&p.closed) != 0 {
-			return nil
-		}
+		closed, err := p.innerAccept()
 		if err != nil {
 			return err
 		}
-		if client != nil {
-			p.wg.Add(1)
-			go func() {
-				defer p.wg.Done()
-				if err := p.processRequests(client); err != nil {
-					log.Println("error processing request:", err)
-				}
-			}()
+		if closed != 0 {
+			return nil
 		}
-		p.mu.Unlock()
 	}
 }
 
@@ -175,12 +210,25 @@ func (p *TSimpleServer) processRequests(client TTransport) error {
 	if err != nil {
 		return err
 	}
-	outputTransport, err := p.outputTransportFactory.GetTransport(client)
-	if err != nil {
-		return err
-	}
 	inputProtocol := p.inputProtocolFactory.GetProtocol(inputTransport)
-	outputProtocol := p.outputProtocolFactory.GetProtocol(outputTransport)
+	var outputTransport TTransport
+	var outputProtocol TProtocol
+
+	// for THeaderProtocol, we must use the same protocol instance for
+	// input and output so that the response is in the same dialect that
+	// the server detected the request was in.
+	headerProtocol, ok := inputProtocol.(*THeaderProtocol)
+	if ok {
+		outputProtocol = inputProtocol
+	} else {
+		oTrans, err := p.outputTransportFactory.GetTransport(client)
+		if err != nil {
+			return err
+		}
+		outputTransport = oTrans
+		outputProtocol = p.outputProtocolFactory.GetProtocol(outputTransport)
+	}
+
 	defer func() {
 		if e := recover(); e != nil {
 			log.Printf("panic in processor: %s: %s", e, debug.Stack())
@@ -198,7 +246,22 @@ func (p *TSimpleServer) processRequests(client TTransport) error {
 			return nil
 		}
 
-		ok, err := processor.Process(defaultCtx, inputProtocol, outputProtocol)
+		ctx := defaultCtx
+		if headerProtocol != nil {
+			// We need to call ReadFrame here, otherwise we won't
+			// get any headers on the AddReadTHeaderToContext call.
+			//
+			// ReadFrame is safe to be called multiple times so it
+			// won't break when it's called again later when we
+			// actually start to read the message.
+			if err := headerProtocol.ReadFrame(); err != nil {
+				return err
+			}
+			ctx = AddReadTHeaderToContext(defaultCtx, headerProtocol.GetReadHeaders())
+			ctx = SetWriteHeaderList(ctx, p.forwardHeaders)
+		}
+
+		ok, err := processor.Process(ctx, inputProtocol, outputProtocol)
 		if err, ok := err.(TTransportException); ok && err.TypeId() == END_OF_FILE {
 			return nil
 		} else if err != nil {

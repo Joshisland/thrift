@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements. See the NOTICE file
  * distributed with this work for additional information
@@ -30,7 +30,6 @@ using System.IO.Compression;
 
 namespace Thrift.Transport
 {
-
     public class THttpClient : TTransport, IDisposable
     {
         private readonly Uri uri;
@@ -43,7 +42,8 @@ namespace Thrift.Transport
 
         private int readTimeout = 30000;
 
-        private IDictionary<String, String> customHeaders = new Dictionary<string, string>();
+        private IDictionary<string, string> customHeaders = new Dictionary<string, string>();
+        private string userAgent = "C#/THttpClient";
 
 #if !SILVERLIGHT
         private IWebProxy proxy = WebRequest.DefaultWebProxy;
@@ -53,10 +53,20 @@ namespace Thrift.Transport
             : this(u, Enumerable.Empty<X509Certificate>())
         {
         }
+        public THttpClient(Uri u, string userAgent)
+            : this(u, userAgent, Enumerable.Empty<X509Certificate>())
+        {
+        }
 
         public THttpClient(Uri u, IEnumerable<X509Certificate> certificates)
         {
             uri = u;
+            this.certificates = (certificates ?? Enumerable.Empty<X509Certificate>()).ToArray();
+        }
+        public THttpClient(Uri u, string userAgent, IEnumerable<X509Certificate> certificates)
+        {
+            uri = u;
+            this.userAgent = userAgent;
             this.certificates = (certificates ?? Enumerable.Empty<X509Certificate>()).ToArray();
         }
 
@@ -64,7 +74,7 @@ namespace Thrift.Transport
         {
             set
             {
-               connectTimeout = value;
+                connectTimeout = value;
             }
         }
 
@@ -76,7 +86,7 @@ namespace Thrift.Transport
             }
         }
 
-        public IDictionary<String, String> CustomHeaders
+        public IDictionary<string, string> CustomHeaders
         {
             get
             {
@@ -140,7 +150,7 @@ namespace Thrift.Transport
             }
             catch (IOException iox)
             {
-                throw new TTransportException(TTransportException.ExceptionType.Unknown, iox.ToString());
+                throw new TTransportException(TTransportException.ExceptionType.Unknown, iox.ToString(), iox);
             }
         }
 
@@ -218,11 +228,11 @@ namespace Thrift.Transport
             }
             catch (IOException iox)
             {
-                throw new TTransportException(TTransportException.ExceptionType.Unknown, iox.ToString());
+                throw new TTransportException(TTransportException.ExceptionType.Unknown, iox.ToString(), iox);
             }
             catch (WebException wx)
             {
-                throw new TTransportException(TTransportException.ExceptionType.Unknown, "Couldn't connect to server: " + wx);
+                throw new TTransportException(TTransportException.ExceptionType.Unknown, "Couldn't connect to server: " + wx, wx);
             }
         }
 
@@ -272,7 +282,7 @@ namespace Thrift.Transport
             // Make the request
             connection.ContentType = "application/x-thrift";
             connection.Accept = "application/x-thrift";
-            connection.UserAgent = "C#/THttpClient";
+            connection.UserAgent = userAgent;
             connection.Method = "POST";
 #if !SILVERLIGHT
             connection.ProtocolVersion = HttpVersion.Version10;
@@ -317,7 +327,7 @@ namespace Thrift.Transport
             }
             catch (IOException iox)
             {
-                throw new TTransportException(iox.ToString());
+                throw new TTransportException(iox.ToString(), iox);
             }
         }
 
@@ -325,7 +335,7 @@ namespace Thrift.Transport
         {
             try
             {
-                var flushAsyncResult = (FlushAsyncResult) asyncResult;
+                var flushAsyncResult = (FlushAsyncResult)asyncResult;
 
                 if (!flushAsyncResult.IsCompleted)
                 {
@@ -338,7 +348,8 @@ namespace Thrift.Transport
                 {
                     throw flushAsyncResult.AsyncException;
                 }
-            } finally
+            }
+            finally
             {
                 outputStream = new MemoryStream();
             }
@@ -360,7 +371,7 @@ namespace Thrift.Transport
             }
             catch (Exception exception)
             {
-                flushAsyncResult.AsyncException = new TTransportException(exception.ToString());
+                flushAsyncResult.AsyncException = new TTransportException(exception.ToString(), exception);
                 flushAsyncResult.UpdateStatusToComplete();
                 flushAsyncResult.NotifyCallbackWhenAvailable();
             }
@@ -375,7 +386,7 @@ namespace Thrift.Transport
             }
             catch (Exception exception)
             {
-                flushAsyncResult.AsyncException = new TTransportException(exception.ToString());
+                flushAsyncResult.AsyncException = new TTransportException(exception.ToString(), exception);
             }
             flushAsyncResult.UpdateStatusToComplete();
             flushAsyncResult.NotifyCallbackWhenAvailable();
@@ -387,9 +398,9 @@ namespace Thrift.Transport
             private volatile Boolean _isCompleted;
             private ManualResetEvent _evt;
             private readonly AsyncCallback _cbMethod;
-            private readonly Object _state;
+            private readonly object _state;
 
-            public FlushAsyncResult(AsyncCallback cbMethod, Object state)
+            public FlushAsyncResult(AsyncCallback cbMethod, object state)
             {
                 _cbMethod = cbMethod;
                 _state = state;
@@ -415,7 +426,7 @@ namespace Thrift.Transport
             {
                 get { return _isCompleted; }
             }
-            private readonly Object _locker = new Object();
+            private readonly object _locker = new object();
             private ManualResetEvent GetEvtHandle()
             {
                 lock (_locker)
@@ -452,7 +463,7 @@ namespace Thrift.Transport
             }
         }
 
-#region " IDisposable Support "
+        #region " IDisposable Support "
         private bool _IsDisposed;
 
         // IDisposable
@@ -470,6 +481,6 @@ namespace Thrift.Transport
             }
             _IsDisposed = true;
         }
-#endregion
+        #endregion
     }
 }
