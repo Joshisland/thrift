@@ -32,6 +32,7 @@ import shared.*;
 enum Prot {
     binary;
     json;
+	compact;
 }
 
 enum Trns {
@@ -51,13 +52,25 @@ class Main {
     private static var targetPort : Int = 9090;
 
     static function main() {
-        #if ! (flash || js)
+
+        #if ! (flash || js || phpwebserver)
         try {
               ParseArgs();
         } catch (e : String) {
             trace(e);
             trace(GetHelp());
             return;
+        }
+
+        #elseif  phpwebserver
+        //forcing server
+        server = true;
+        trns = http;
+        initPhpWebServer();
+        //check method
+        if(php.Web.getMethod() != 'POST') {
+          Sys.println('http endpoint for thrift test server');
+          return;
         }
         #end
 
@@ -73,16 +86,39 @@ class Main {
         trace("Completed.");
     }
 
+    #if phpwebserver
+    private static function initPhpWebServer()
+    {
+        //remap trace to error log
+        haxe.Log.trace = function(v:Dynamic, ?infos:haxe.PosInfos)
+        {
+          // handle trace
+          var newValue : Dynamic;
+          if (infos != null && infos.customParams!=null) {
+            var extra:String = "";
+            for( v in infos.customParams )
+              extra += "," + v;
+            newValue = v + extra;
+          }
+          else {
+            newValue = v;
+          }
+          var msg = infos != null ? infos.fileName + ':' + infos.lineNumber + ': ' : '';
+          Sys.stderr().writeString('${msg}${newValue}\n');
+        }
+    }
+    #end
+
 
     #if ! (flash || js)
 
     private static function GetHelp() : String {
-        return Sys.executablePath()+"  modus  trnsOption  transport  protocol\n"
+        return Sys.programPath+"  modus  layered  transport  protocol\n"
         +"Options:\n"
-        +"  modus:       client, server   (default: client)\n"
-        +"  trnsOption:  framed, buffered (default: none)\n"
-        +"  transport:   socket, http     (default: socket)\n"
-        +"  protocol:    binary, json     (default: binary)\n"
+        +"  modus:       client, server          (default: client)\n"
+        +"  layered:     framed, buffered        (default: none)\n"
+        +"  transport:   socket, http            (default: socket)\n"
+        +"  protocol:    binary, json, compact   (default: binary)\n"
         +"\n"
         +"All arguments are optional.\n";
     }
@@ -125,6 +161,9 @@ class Main {
                 } else if ( arg == "json") {
                     prot = json;
                     ++step;
+                } else if ( arg == "compact") {
+                    prot = compact;
+                    ++step;
                 } else {
                     throw "Unknown protocol "+arg;
                 }
@@ -154,8 +193,9 @@ class Main {
              trace('- socket transport $targetHost:$targetPort');
             transport = new TSocket( targetHost, targetPort);
         case http:
-             trace('- HTTP transport $targetHost');
-            transport = new THttpClient( targetHost);
+            var uri = 'http://${targetHost}:${targetPort}';
+            trace('- HTTP transport $uri');
+            transport = new THttpClient(uri);
         default:
             throw "Unhandled transport";
         }
@@ -181,6 +221,9 @@ class Main {
         case json:
              trace("- JSON protocol");
              protocol = new TJSONProtocol( transport);
+        case compact:
+             trace("- compact protocol");
+             protocol = new TCompactProtocol( transport);
         default:
             throw "Unhandled protocol";
         }
@@ -196,7 +239,7 @@ class Main {
         var client = ClientSetup();
 
         try {
-              client.ping();
+            client.ping();
             trace("ping() successful");
         } catch(error : TException) {
             trace('ping() failed: $error');
@@ -267,9 +310,21 @@ class Main {
             transport = new TServerSocket( targetPort);
             #end
         case http:
-            throw "HTTP server not implemented yet";
-             //trace("- http transport");
-             //transport = new THttpClient( targetHost);
+            #if !phpwebserver
+              throw "HTTP server not implemented yet";
+              //trace("- http transport");
+              //transport = new THttpClient( targetHost);
+            #else
+              trace("- http transport");
+              transport = new TWrappingServerTransport(
+                new TStreamTransport(
+                  new TFileStream("php://input", Read),
+                  new TFileStream("php://output", Append),
+                  null
+                )
+              );
+
+            #end
         default:
             throw "Unhandled transport";
         }
@@ -294,13 +349,20 @@ class Main {
         case json:
             trace("- JSON protocol");
              protfactory = new TJSONProtocolFactory();
+        case compact:
+            trace("- compact protocol");
+             protfactory = new TCompactProtocolFactory();
         default:
             throw "Unhandled protocol";
         }
 
-        var handler = new CalculatorHandler();
+        var handler : Calculator_service = new CalculatorHandler();
         var processor = new CalculatorProcessor(handler);
         var server = new TSimpleServer( processor, transport, transfactory, protfactory);
+        #if phpwebserver
+        server.runOnce = true;
+        #end
+
         return server;
     }
 
@@ -321,4 +383,4 @@ class Main {
     }
 
 }
- 
+

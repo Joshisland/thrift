@@ -22,10 +22,11 @@ package org.apache.thrift.protocol;
 
 import java.io.UnsupportedEncodingException;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 
-import org.apache.thrift.ShortStack;
 import org.apache.thrift.TException;
 import org.apache.thrift.transport.TTransport;
+import org.apache.thrift.transport.TTransportException;
 
 /**
  * TCompactProtocol2 is the Java implementation of the compact protocol specified
@@ -37,6 +38,8 @@ import org.apache.thrift.transport.TTransport;
  * and i64 fields you have, the more benefit you'll see.
  */
 public class TCompactProtocol extends TProtocol {
+  private final static byte[] EMPTY_BYTES = new byte[0];
+  private final static ByteBuffer EMPTY_BUFFER = ByteBuffer.wrap(EMPTY_BYTES);
 
   private final static long NO_LENGTH_LIMIT = -1;
 
@@ -144,6 +147,12 @@ public class TCompactProtocol extends TProtocol {
   private final long containerLengthLimit_;
 
   /**
+   * Temporary buffer used for various operations that would otherwise require a
+   * small allocation.
+   */
+  private final byte[] temp = new byte[10];
+
+  /**
    * Create a TCompactProtocol.
    *
    * @param transport the TTransport object to read from or write to.
@@ -194,6 +203,7 @@ public class TCompactProtocol extends TProtocol {
    * Write a message header to the wire. Compact Protocol messages contain the
    * protocol version so we can migrate forwards in the future if need be.
    */
+  @Override
   public void writeMessageBegin(TMessage message) throws TException {
     writeByteDirect(PROTOCOL_ID);
     writeByteDirect((VERSION & VERSION_MASK) | ((message.type << TYPE_SHIFT_AMOUNT) & TYPE_MASK));
@@ -206,6 +216,7 @@ public class TCompactProtocol extends TProtocol {
    * use it as an opportunity to put special placeholder markers on the field
    * stack so we can get the field id deltas correct.
    */
+  @Override
   public void writeStructBegin(TStruct struct) throws TException {
     lastField_.push(lastFieldId_);
     lastFieldId_ = 0;
@@ -222,7 +233,7 @@ public class TCompactProtocol extends TProtocol {
 
   /**
    * Write a field header containing the field id and field type. If the
-   * difference between the current field id and the last one is small (< 15),
+   * difference between the current field id and the last one is small (&lt; 15),
    * then the field id will be encoded in the 4 MSB as a delta. Otherwise, the
    * field id will follow the type header as a zigzag varint.
    */
@@ -343,34 +354,26 @@ public class TCompactProtocol extends TProtocol {
    * Write a double to the wire as 8 bytes.
    */
   public void writeDouble(double dub) throws TException {
-    byte[] data = new byte[]{0, 0, 0, 0, 0, 0, 0, 0};
-    fixedLongToBytes(Double.doubleToLongBits(dub), data, 0);
-    trans_.write(data);
+    fixedLongToBytes(Double.doubleToLongBits(dub), temp, 0);
+    trans_.write(temp, 0, 8);
   }
 
   /**
    * Write a string to the wire with a varint size preceding.
    */
   public void writeString(String str) throws TException {
-    try {
-      byte[] bytes = str.getBytes("UTF-8");
-      writeBinary(bytes, 0, bytes.length);
-    } catch (UnsupportedEncodingException e) {
-      throw new TException("UTF-8 not supported!");
-    }
+    byte[] bytes = str.getBytes(StandardCharsets.UTF_8);
+    writeVarint32(bytes.length);
+    trans_.write(bytes, 0, bytes.length);
   }
 
   /**
    * Write a byte array, using a varint for the size.
    */
   public void writeBinary(ByteBuffer bin) throws TException {
-    int length = bin.limit() - bin.position();
-    writeBinary(bin.array(), bin.position() + bin.arrayOffset(), length);
-  }
-
-  private void writeBinary(byte[] buf, int offset, int length) throws TException {
-    writeVarint32(length);
-    trans_.write(buf, offset, length);
+    ByteBuffer bb = bin.asReadOnlyBuffer();
+    writeVarint32(bb.remaining());
+    trans_.write(bb);
   }
 
   //
@@ -405,40 +408,38 @@ public class TCompactProtocol extends TProtocol {
    * Write an i32 as a varint. Results in 1-5 bytes on the wire.
    * TODO: make a permanent buffer like writeVarint64?
    */
-  byte[] i32buf = new byte[5];
   private void writeVarint32(int n) throws TException {
     int idx = 0;
     while (true) {
       if ((n & ~0x7F) == 0) {
-        i32buf[idx++] = (byte)n;
+        temp[idx++] = (byte)n;
         // writeByteDirect((byte)n);
         break;
         // return;
       } else {
-        i32buf[idx++] = (byte)((n & 0x7F) | 0x80);
+        temp[idx++] = (byte)((n & 0x7F) | 0x80);
         // writeByteDirect((byte)((n & 0x7F) | 0x80));
         n >>>= 7;
       }
     }
-    trans_.write(i32buf, 0, idx);
+    trans_.write(temp, 0, idx);
   }
 
   /**
    * Write an i64 as a varint. Results in 1-10 bytes on the wire.
    */
-  byte[] varint64out = new byte[10];
   private void writeVarint64(long n) throws TException {
     int idx = 0;
     while (true) {
       if ((n & ~0x7FL) == 0) {
-        varint64out[idx++] = (byte)n;
+        temp[idx++] = (byte)n;
         break;
       } else {
-        varint64out[idx++] = ((byte)((n & 0x7F) | 0x80));
+        temp[idx++] = ((byte)((n & 0x7F) | 0x80));
         n >>>= 7;
       }
     }
-    trans_.write(varint64out, 0, idx);
+    trans_.write(temp, 0, idx);
   }
 
   /**
@@ -476,10 +477,9 @@ public class TCompactProtocol extends TProtocol {
    * Writes a byte without any possibility of all that field header nonsense.
    * Used internally by other writing methods that know they need to write a byte.
    */
-  private byte[] byteDirectBuffer = new byte[1];
   private void writeByteDirect(byte b) throws TException {
-    byteDirectBuffer[0] = b;
-    trans_.write(byteDirectBuffer);
+    temp[0] = b;
+    trans_.write(temp, 0, 1);
   }
 
   /**
@@ -577,7 +577,9 @@ public class TCompactProtocol extends TProtocol {
     int size = readVarint32();
     checkContainerReadLength(size);
     byte keyAndValueType = size == 0 ? 0 : readByte();
-    return new TMap(getTType((byte)(keyAndValueType >> 4)), getTType((byte)(keyAndValueType & 0xf)), size);
+    TMap map = new TMap(getTType((byte)(keyAndValueType >> 4)), getTType((byte)(keyAndValueType & 0xf)), size);
+    checkReadBytesAvailable(map);
+    return map;
   }
 
   /**
@@ -593,8 +595,9 @@ public class TCompactProtocol extends TProtocol {
       size = readVarint32();
     }
     checkContainerReadLength(size);
-    byte type = getTType(size_and_type);
-    return new TList(type, size);
+    TList list = new TList(getTType(size_and_type), size);
+    checkReadBytesAvailable(list);
+    return list;
   }
 
   /**
@@ -621,7 +624,6 @@ public class TCompactProtocol extends TProtocol {
     return readByte() == Types.BOOLEAN_TRUE;
   }
 
-  byte[] byteRawBuf = new byte[1];
   /**
    * Read a single byte off the wire. Nothing interesting here.
    */
@@ -631,8 +633,8 @@ public class TCompactProtocol extends TProtocol {
       b = trans_.getBuffer()[trans_.getBufferPosition()];
       trans_.consumeBuffer(1);
     } else {
-      trans_.readAll(byteRawBuf, 0, 1);
-      b = byteRawBuf[0];
+      trans_.readAll(temp, 0, 1);
+      b = temp[0];
     }
     return b;
   }
@@ -662,9 +664,8 @@ public class TCompactProtocol extends TProtocol {
    * No magic here - just read a double off the wire.
    */
   public double readDouble() throws TException {
-    byte[] longBits = new byte[8];
-    trans_.readAll(longBits, 0, 8);
-    return Double.longBitsToDouble(bytesToLong(longBits));
+    trans_.readAll(temp, 0, 8);
+    return Double.longBitsToDouble(bytesToLong(temp));
   }
 
   /**
@@ -678,27 +679,26 @@ public class TCompactProtocol extends TProtocol {
       return "";
     }
 
-    try {
-      if (trans_.getBytesRemainingInBuffer() >= length) {
-        String str = new String(trans_.getBuffer(), trans_.getBufferPosition(), length, "UTF-8");
-        trans_.consumeBuffer(length);
-        return str;
-      } else {
-        return new String(readBinary(length), "UTF-8");
-      }
-    } catch (UnsupportedEncodingException e) {
-      throw new TException("UTF-8 not supported!");
+    final String str;
+    if (trans_.getBytesRemainingInBuffer() >= length) {
+      str = new String(trans_.getBuffer(), trans_.getBufferPosition(),
+          length, StandardCharsets.UTF_8);
+      trans_.consumeBuffer(length);
+    } else {
+      str = new String(readBinary(length), StandardCharsets.UTF_8);
     }
+    return str;
   }
 
   /**
-   * Read a byte[] from the wire.
+   * Read a ByteBuffer from the wire.
    */
   public ByteBuffer readBinary() throws TException {
     int length = readVarint32();
-    checkStringReadLength(length);
-    if (length == 0) return ByteBuffer.wrap(new byte[0]);
-
+    if (length == 0) {
+      return EMPTY_BUFFER;
+    }
+    getTransport().checkReadBytesAvailable(length);
     if (trans_.getBytesRemainingInBuffer() >= length) {
       ByteBuffer bb = ByteBuffer.wrap(trans_.getBuffer(), trans_.getBufferPosition(), length);
       trans_.consumeBuffer(length);
@@ -714,18 +714,21 @@ public class TCompactProtocol extends TProtocol {
    * Read a byte[] of a known length from the wire.
    */
   private byte[] readBinary(int length) throws TException {
-    if (length == 0) return new byte[0];
+    if (length == 0) return EMPTY_BYTES;
 
     byte[] buf = new byte[length];
     trans_.readAll(buf, 0, length);
     return buf;
   }
 
-  private void checkStringReadLength(int length) throws TProtocolException {
+  private void checkStringReadLength(int length) throws TException {
     if (length < 0) {
       throw new TProtocolException(TProtocolException.NEGATIVE_SIZE,
                                    "Negative length: " + length);
     }
+
+    getTransport().checkReadBytesAvailable(length);
+    
     if (stringLengthLimit_ != NO_LENGTH_LIMIT && length > stringLengthLimit_) {
       throw new TProtocolException(TProtocolException.SIZE_LIMIT,
                                    "Length exceeded max allowed: " + length);
@@ -902,5 +905,41 @@ public class TCompactProtocol extends TProtocol {
    */
   private byte getCompactType(byte ttype) {
     return ttypeToCompactType[ttype];
+  }
+
+  /**
+   * Return the minimum number of bytes a type will consume on the wire
+   */
+  public int getMinSerializedSize(byte type) throws TTransportException {
+      switch (type) {
+          case 0:
+              return 0; // Stop
+          case 1:
+              return 0; // Void
+          case 2:
+              return 1; // Bool sizeof(byte)
+          case 3:
+              return 1; // Byte sizeof(byte)
+          case 4:
+              return 8; // Double sizeof(double)
+          case 6:
+              return 1; // I16 sizeof(byte)
+          case 8:
+              return 1; // I32 sizeof(byte)
+          case 10:
+              return 1;// I64 sizeof(byte)
+          case 11:
+              return 1;  // string length sizeof(byte)
+          case 12:
+              return 0;  // empty struct
+          case 13:
+              return 1;  // element count Map sizeof(byte)
+          case 14:
+              return 1;  // element count Set sizeof(byte)
+          case 15:
+              return 1;  // element count List sizeof(byte)
+          default:
+              throw new TTransportException(TTransportException.UNKNOWN, "unrecognized type code");
+      }
   }
 }

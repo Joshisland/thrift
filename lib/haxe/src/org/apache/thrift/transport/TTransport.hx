@@ -19,11 +19,18 @@
 
 package org.apache.thrift.transport;
 
+import haxe.Int64;
+import haxe.io.Eof;
 import haxe.io.Bytes;
 import haxe.io.BytesBuffer;
 import org.apache.thrift.AbstractMethodError;
 
 class TTransport {
+	
+	public var Configuration(get, never) : TConfiguration;
+	public function get_Configuration() : TConfiguration throw "abstract method called";
+	public function UpdateKnownMessageSize(size : Int64) : Void throw "abstract method called";
+	public function CheckReadBytesAvailable(numBytes : Int64) : Void  throw "abstract method called";
 
     /**
      * Queries whether the transport is open.
@@ -85,16 +92,21 @@ class TTransport {
         var got : Int = 0;
         var ret : Int = 0;
         while (got < len) {
+          try {
             ret = read(buf, off+got, len-got);
             if (ret <= 0) {
               throw new TTransportException(TTransportException.UNKNOWN,
-                                        "Cannot read. Remote side has closed. Tried to read "
-                                        + len + " bytes, but only got " + got + " bytes.");
+                          "Cannot read. Remote side has closed. Tried to read "
+                          + len + " bytes, but only got " + got + " bytes.");
             }
-            got += ret;
+          }
+          catch (eof : Eof) {
+            throw new TTransportException(TTransportException.END_OF_FILE, 'Can\'t read $len bytes!');
+          }
+          got += ret;
         }
         return got;
-      }
+    }
 
     /**
      * Writes the buffer to the output

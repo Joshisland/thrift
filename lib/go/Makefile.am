@@ -20,7 +20,7 @@
 SUBDIRS = .
 
 if WITH_TESTS
-SUBDIRS += test
+SUBDIRS += test test/fuzz
 endif
 
 install:
@@ -31,10 +31,13 @@ install:
 	@echo '##############################################################'
 
 check-local:
-	$(GO) test ./thrift
+	$(GO) test -mod=mod -race ./thrift
+
+clean-local:
+	$(RM) -rf pkg
 
 all-local:
-	$(GO) build ./thrift
+	$(GO) build -mod=mod ./thrift
 
 EXTRA_DIST = \
 	thrift \

@@ -31,6 +31,10 @@ if WITH_CPP
 SUBDIRS += cpp
 endif
 
+if WITH_D
+SUBDIRS += d
+endif
+
 if WITH_JAVA
 SUBDIRS += java
 SUBDIRS += js
@@ -46,12 +50,12 @@ if WITH_RUBY
 SUBDIRS += rb
 endif
 
-if WITH_HASKELL
-SUBDIRS += hs
-endif
-
 if WITH_HAXE
 SUBDIRS += haxe
+endif
+
+if WITH_DOTNET
+SUBDIRS += netstd
 endif
 
 if WITH_GO
@@ -60,6 +64,26 @@ endif
 
 if WITH_NODEJS
 SUBDIRS += nodejs
+endif
+
+if WITH_DART
+SUBDIRS += dart
+endif
+
+if WITH_RS
+SUBDIRS += rs
+endif
+
+if WITH_CL
+SUBDIRS += cl
+endif
+
+if WITH_PERL
+SUBDIRS += perl
+endif
+
+if WITH_PHP
+SUBDIRS += php
 endif
 
 #
@@ -76,15 +100,10 @@ endif
 # Any folders or files not listed above being added to SUBDIR need to be placed here in
 # EXTRA_DIST to be included in the release
 EXTRA_DIST = \
-	as3 \
-	csharp \
 	d \
 	delphi \
 	erl \
-	hs \
 	ocaml \
-	perl \
-	php \
 	shared.thrift \
 	tutorial.thrift \
 	README.md

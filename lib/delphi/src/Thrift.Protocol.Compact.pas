@@ -28,6 +28,7 @@ uses
   SysUtils,
   Math,
   Generics.Collections,
+  Thrift.Configuration,
   Thrift.Transport,
   Thrift.Protocol,
   Thrift.Utils;
@@ -47,7 +48,7 @@ type
         function GetProtocol( const trans: ITransport): IProtocol;
       end;
 
-  private const
+  strict private const
 
     { TODO
     static TStruct ANONYMOUS_STRUCT = new TStruct("");
@@ -61,7 +62,7 @@ type
     TYPE_BITS         = Byte( $07); // 0000 0111
     TYPE_SHIFT_AMOUNT = Byte( 5);
 
-  private type
+  strict private type
     // All of the on-wire type codes.
     Types = (
       STOP          = $00,
@@ -79,7 +80,10 @@ type
       STRUCT        = $0C
     );
 
-  private const
+  private type
+    TEightBytesArray = packed array[0..7] of Byte;
+
+  strict private const
     ttypeToCompactType : array[TType] of Types = (
       Types.STOP,           // Stop    = 0,
       Types(-1),            // Void    = 1,
@@ -115,7 +119,7 @@ type
       TType.Struct      // STRUCT
     );
 
-  private
+  strict private
     // Used to keep track of the last field for the current and previous structs,
     // so we can do the delta stuff.
     lastField_ : TStack<Integer>;
@@ -123,19 +127,17 @@ type
 
     // If we encounter a boolean field begin, save the TField here so it can
     // have the value incorporated.
-    private booleanField_ : IField;
+    strict private booleanField_ : TThriftField;
 
     // If we Read a field header, and it's a boolean field, save the boolean
     // value here so that ReadBool can use it.
-    private  boolValue_  : ( unused, bool_true, bool_false);
+    strict private  boolValue_  : ( unused, bool_true, bool_false);
 
   public
     constructor Create(const trans : ITransport);
     destructor Destroy;  override;
 
-    procedure Reset;
-
-  private
+  strict private
     procedure WriteByteDirect( const b : Byte);  overload;
 
     // Writes a byte without any possibility of all that field header nonsense.
@@ -145,24 +147,24 @@ type
     // TODO: make a permanent buffer like WriteVarint64?
     procedure WriteVarint32( n : Cardinal);
 
-  private
+  strict private
     // The workhorse of WriteFieldBegin. It has the option of doing a 'type override'
     // of the type header. This is used specifically in the boolean field case.
-    procedure WriteFieldBeginInternal( const field : IField; typeOverride : Byte);
+    procedure WriteFieldBeginInternal( const field : TThriftField; typeOverride : Byte);
 
   public
-    procedure WriteMessageBegin( const msg: IMessage); override;
+    procedure WriteMessageBegin( const msg: TThriftMessage); override;
     procedure WriteMessageEnd; override;
-    procedure WriteStructBegin( const struc: IStruct); override;
+    procedure WriteStructBegin( const struc: TThriftStruct); override;
     procedure WriteStructEnd; override;
-    procedure WriteFieldBegin( const field: IField); override;
+    procedure WriteFieldBegin( const field: TThriftField); override;
     procedure WriteFieldEnd; override;
     procedure WriteFieldStop; override;
-    procedure WriteMapBegin( const map: IMap); override;
+    procedure WriteMapBegin( const map: TThriftMap); override;
     procedure WriteMapEnd; override;
-    procedure WriteListBegin( const list: IList); override;
+    procedure WriteListBegin( const list: TThriftList); override;
     procedure WriteListEnd(); override;
-    procedure WriteSetBegin( const set_: ISet ); override;
+    procedure WriteSetBegin( const set_: TThriftSet ); override;
     procedure WriteSetEnd(); override;
     procedure WriteBool( b: Boolean); override;
     procedure WriteByte( b: ShortInt); override;
@@ -172,7 +174,7 @@ type
     procedure WriteDouble( const dub: Double); override;
     procedure WriteBinary( const b: TBytes); overload; override;
 
-  private
+  private  // unit visible stuff
     class function  DoubleToInt64Bits( const db : Double) : Int64;
     class function  Int64BitsToDouble( const i64 : Int64) : Double;
 
@@ -191,20 +193,24 @@ type
     class function intToZigZag( const n : Integer) : Cardinal;
 
     //Convert a Int64 into little-endian bytes in buf starting at off and going until off+7.
-    class procedure fixedLongToBytes( const n : Int64; var buf : TBytes);
+    class procedure fixedLongToBytes( const n : Int64; var buf : TEightBytesArray); inline;
+
+  strict protected
+    function GetMinSerializedSize( const aType : TType) : Integer;  override;
+    procedure Reset;  override;
 
   public
-    function  ReadMessageBegin: IMessage; override;
+    function  ReadMessageBegin: TThriftMessage; override;
     procedure ReadMessageEnd(); override;
-    function  ReadStructBegin: IStruct; override;
+    function  ReadStructBegin: TThriftStruct; override;
     procedure ReadStructEnd; override;
-    function  ReadFieldBegin: IField; override;
+    function  ReadFieldBegin: TThriftField; override;
     procedure ReadFieldEnd(); override;
-    function  ReadMapBegin: IMap; override;
+    function  ReadMapBegin: TThriftMap; override;
     procedure ReadMapEnd(); override;
-    function  ReadListBegin: IList; override;
+    function  ReadListBegin: TThriftList; override;
     procedure ReadListEnd(); override;
-    function  ReadSetBegin: ISet; override;
+    function  ReadSetBegin: TThriftSet; override;
     procedure ReadSetEnd(); override;
     function  ReadBool: Boolean; override;
     function  ReadByte: ShortInt; override;
@@ -237,7 +243,7 @@ type
     // Note that it's important that the mask bytes are Int64 literals,
     // otherwise they'll default to ints, and when you shift an Integer left 56 bits,
     // you just get a messed up Integer.
-    class function bytesToLong( const bytes : TBytes) : Int64;
+    class function bytesToLong( const bytes : TEightBytesArray) : Int64; inline;
 
     // type testing and converting
     class function isBoolType( const b : byte) : Boolean;
@@ -266,14 +272,14 @@ end;
 //--- TCompactProtocolImpl -------------------------------------------------
 
 
-constructor TCompactProtocolImpl.Create(const trans: ITransport);
+constructor TCompactProtocolImpl.Create( const trans : ITransport);
 begin
   inherited Create( trans);
 
   lastFieldId_ := 0;
   lastField_ := TStack<Integer>.Create;
 
-  booleanField_ := nil;
+  Init( booleanField_, '', TType.Stop, 0);
   boolValue_ := unused;
 end;
 
@@ -291,9 +297,10 @@ end;
 
 procedure TCompactProtocolImpl.Reset;
 begin
+  inherited Reset;
   lastField_.Clear();
   lastFieldId_ := 0;
-  booleanField_ := nil;
+  Init( booleanField_, '', TType.Stop, 0);
   boolValue_ := unused;
 end;
 
@@ -301,11 +308,8 @@ end;
 // Writes a byte without any possibility of all that field header nonsense.
 // Used internally by other writing methods that know they need to Write a byte.
 procedure TCompactProtocolImpl.WriteByteDirect( const b : Byte);
-var data : TBytes;
 begin
-  SetLength( data, 1);
-  data[0] := b;
-  Transport.Write( data);
+  Transport.Write( @b, SizeOf(b));
 end;
 
 
@@ -318,10 +322,9 @@ end;
 
 // Write an i32 as a varint. Results in 1-5 bytes on the wire.
 procedure TCompactProtocolImpl.WriteVarint32( n : Cardinal);
-var i32buf : TBytes;
-    idx : Integer;
+var idx : Integer;
+    i32buf : packed array[0..4] of Byte;
 begin
-  SetLength( i32buf, 5);
   idx := 0;
   while TRUE do begin
     ASSERT( idx < Length(i32buf));
@@ -338,13 +341,13 @@ begin
     n := n shr 7;
   end;
 
-  Transport.Write( i32buf, 0, idx);
+  Transport.Write( @i32buf[0], 0, idx);
 end;
 
 
 // Write a message header to the wire. Compact Protocol messages contain the
 // protocol version so we can migrate forwards in the future if need be.
-procedure TCompactProtocolImpl.WriteMessageBegin( const msg: IMessage);
+procedure TCompactProtocolImpl.WriteMessageBegin( const msg: TThriftMessage);
 var versionAndType : Byte;
 begin
   Reset;
@@ -362,7 +365,7 @@ end;
 // Write a struct begin. This doesn't actually put anything on the wire. We use it as an
 // opportunity to put special placeholder markers on the field stack so we can get the
 // field id deltas correct.
-procedure TCompactProtocolImpl.WriteStructBegin( const struc: IStruct);
+procedure TCompactProtocolImpl.WriteStructBegin( const struc: TThriftStruct);
 begin
   lastField_.Push(lastFieldId_);
   lastFieldId_ := 0;
@@ -380,7 +383,7 @@ end;
 // Write a field header containing the field id and field type. If the difference between the
 // current field id and the last one is small (< 15), then the field id will be encoded in
 // the 4 MSB as a delta. Otherwise, the field id will follow the type header as a zigzag varint.
-procedure TCompactProtocolImpl.WriteFieldBegin( const field: IField);
+procedure TCompactProtocolImpl.WriteFieldBegin( const field: TThriftField);
 begin
   case field.Type_ of
     TType.Bool_ : booleanField_ := field; // we want to possibly include the value, so we'll wait.
@@ -392,7 +395,7 @@ end;
 
 // The workhorse of WriteFieldBegin. It has the option of doing a 'type override'
 // of the type header. This is used specifically in the boolean field case.
-procedure TCompactProtocolImpl.WriteFieldBeginInternal( const field : IField; typeOverride : Byte);
+procedure TCompactProtocolImpl.WriteFieldBeginInternal( const field : TThriftField; typeOverride : Byte);
 var typeToWrite : Byte;
 begin
   // if there's a type override, use that.
@@ -425,7 +428,7 @@ end;
 
 // Write a map header. If the map is empty, omit the key and value type
 // headers, as we don't need any additional information to skip it.
-procedure TCompactProtocolImpl.WriteMapBegin( const map: IMap);
+procedure TCompactProtocolImpl.WriteMapBegin( const map: TThriftMap);
 var key, val : Byte;
 begin
   if (map.Count = 0)
@@ -440,14 +443,14 @@ end;
 
 
 // Write a list header.
-procedure TCompactProtocolImpl.WriteListBegin( const list: IList);
+procedure TCompactProtocolImpl.WriteListBegin( const list: TThriftList);
 begin
   WriteCollectionBegin( list.ElementType, list.Count);
 end;
 
 
 // Write a set header.
-procedure TCompactProtocolImpl.WriteSetBegin( const set_: ISet );
+procedure TCompactProtocolImpl.WriteSetBegin( const set_: TThriftSet );
 begin
   WriteCollectionBegin( set_.ElementType, set_.Count);
 end;
@@ -464,10 +467,10 @@ begin
   then bt := Types.BOOLEAN_TRUE
   else bt := Types.BOOLEAN_FALSE;
 
-  if booleanField_ <> nil then begin
+  if booleanField_.Type_ = TType.Bool_ then begin
     // we haven't written the field header yet
     WriteFieldBeginInternal( booleanField_, Byte(bt));
-    booleanField_ := nil;
+    booleanField_.Type_ := TType.Stop;
   end
   else begin
     // we're not part of a field, so just Write the value.
@@ -520,10 +523,10 @@ end;
 
 // Write a double to the wire as 8 bytes.
 procedure TCompactProtocolImpl.WriteDouble( const dub: Double);
-var data : TBytes;
+var data : TEightBytesArray;
 begin
   fixedLongToBytes( DoubleToInt64Bits(dub), data);
-  Transport.Write( data);
+  Transport.Write( @data[0], 0, SizeOf(data));
 end;
 
 
@@ -579,10 +582,9 @@ end;
 
 // Write an i64 as a varint. Results in 1-10 bytes on the wire.
 procedure TCompactProtocolImpl.WriteVarint64( n : UInt64);
-var varint64out : TBytes;
-    idx : Integer;
+var idx : Integer;
+    varint64out : packed array[0..9] of Byte;
 begin
-  SetLength( varint64out, 10);
   idx := 0;
   while TRUE do begin
     ASSERT( idx < Length(varint64out));
@@ -599,7 +601,7 @@ begin
     n := n shr 7;
   end;
 
-  Transport.Write( varint64out, 0, idx);
+  Transport.Write( @varint64out[0], 0, idx);
 end;
 
 
@@ -626,9 +628,9 @@ end;
 
 
 // Convert a Int64 into 8 little-endian bytes in buf
-class procedure TCompactProtocolImpl.fixedLongToBytes( const n : Int64; var buf : TBytes);
+class procedure TCompactProtocolImpl.fixedLongToBytes( const n : Int64; var buf : TEightBytesArray);
 begin
-  SetLength( buf, 8);
+  ASSERT( Length(buf) >= 8);
   buf[0] := Byte( n         and $FF);
   buf[1] := Byte((n shr 8)  and $FF);
   buf[2] := Byte((n shr 16) and $FF);
@@ -642,7 +644,7 @@ end;
 
 
 // Read a message header.
-function TCompactProtocolImpl.ReadMessageBegin : IMessage;
+function TCompactProtocolImpl.ReadMessageBegin : TThriftMessage;
 var protocolId, versionAndType, version, type_ : Byte;
     seqid : Integer;
     msgNm : String;
@@ -651,29 +653,29 @@ begin
 
   protocolId := Byte( ReadByte);
   if (protocolId <> PROTOCOL_ID)
-  then raise TProtocolException.Create( 'Expected protocol id ' + IntToHex(PROTOCOL_ID,2)
-                                      + ' but got ' + IntToHex(protocolId,2));
+  then raise TProtocolExceptionBadVersion.Create( 'Expected protocol id ' + IntToHex(PROTOCOL_ID,2)
+                                                + ' but got ' + IntToHex(protocolId,2));
 
   versionAndType := Byte( ReadByte);
   version        := Byte( versionAndType and VERSION_MASK);
   if (version <> VERSION)
-  then raise TProtocolException.Create( 'Expected version ' +IntToStr(VERSION)
-                                      + ' but got ' + IntToStr(version));
+  then raise TProtocolExceptionBadVersion.Create( 'Expected version ' +IntToStr(VERSION)
+                                                + ' but got ' + IntToStr(version));
 
   type_ := Byte( (versionAndType shr TYPE_SHIFT_AMOUNT) and TYPE_BITS);
   seqid := Integer( ReadVarint32);
   msgNm := ReadString;
-  result := TMessageImpl.Create( msgNm, TMessageType(type_), seqid);
+  Init( result, msgNm, TMessageType(type_), seqid);
 end;
 
 
 // Read a struct begin. There's nothing on the wire for this, but it is our
 // opportunity to push a new struct begin marker onto the field stack.
-function TCompactProtocolImpl.ReadStructBegin: IStruct;
+function TCompactProtocolImpl.ReadStructBegin: TThriftStruct;
 begin
   lastField_.Push( lastFieldId_);
   lastFieldId_ := 0;
-  result := TStructImpl.Create('');
+  Init( result);
 end;
 
 
@@ -687,15 +689,16 @@ end;
 
 
 // Read a field header off the wire.
-function TCompactProtocolImpl.ReadFieldBegin: IField;
+function TCompactProtocolImpl.ReadFieldBegin: TThriftField;
 var type_ : Byte;
-    fieldId, modifier : ShortInt;
+    modifier : ShortInt;
+    fieldId : SmallInt;
 begin
   type_ := Byte( ReadByte);
 
   // if it's a stop, then we can return immediately, as the struct is over.
   if type_ = Byte(Types.STOP) then begin
-    result := TFieldImpl.Create( '', TType.Stop, 0);
+    Init( result, '', TType.Stop, 0);
     Exit;
   end;
 
@@ -703,9 +706,9 @@ begin
   modifier := ShortInt( (type_ and $F0) shr 4);
   if (modifier = 0)
   then fieldId := ReadI16    // not a delta. look ahead for the zigzag varint field id.
-  else fieldId := ShortInt( lastFieldId_ + modifier); // add the delta to the last Read field id.
+  else fieldId := SmallInt( lastFieldId_ + modifier); // add the delta to the last Read field id.
 
-  result := TFieldImpl.Create( '', getTType(Byte(type_ and $0F)), fieldId);
+  Init( result, '', getTType(Byte(type_ and $0F)), fieldId);
 
   // if this happens to be a boolean field, the value is encoded in the type
    // save the boolean value in a special instance variable.
@@ -723,7 +726,7 @@ end;
 // Read a map header off the wire. If the size is zero, skip Reading the key
 // and value type. This means that 0-length maps will yield TMaps without the
 // "correct" types.
-function TCompactProtocolImpl.ReadMapBegin: IMap;
+function TCompactProtocolImpl.ReadMapBegin: TThriftMap;
 var size : Integer;
     keyAndValueType : Byte;
     key, val : TType;
@@ -735,8 +738,9 @@ begin
 
   key := getTType( Byte( keyAndValueType shr 4));
   val := getTType( Byte( keyAndValueType and $F));
-  result := TMapImpl.Create( key, val, size);
+  Init( result, key, val, size);
   ASSERT( (result.KeyType = key) and (result.ValueType = val));
+  CheckReadBytesAvailable(result);
 end;
 
 
@@ -744,7 +748,7 @@ end;
 // be packed into the element type header. If it's a longer list, the 4 MSB
 // of the element type header will be $F, and a varint will follow with the
 // true size.
-function TCompactProtocolImpl.ReadListBegin: IList;
+function TCompactProtocolImpl.ReadListBegin: TThriftList;
 var size_and_type : Byte;
     size : Integer;
     type_ : TType;
@@ -756,7 +760,8 @@ begin
   then size := Integer( ReadVarint32);
 
   type_ := getTType( size_and_type);
-  result := TListImpl.Create( type_, size);
+  Init( result, type_, size);
+  CheckReadBytesAvailable(result);
 end;
 
 
@@ -764,7 +769,7 @@ end;
 // be packed into the element type header. If it's a longer set, the 4 MSB
 // of the element type header will be $F, and a varint will follow with the
 // true size.
-function TCompactProtocolImpl.ReadSetBegin: ISet;
+function TCompactProtocolImpl.ReadSetBegin: TThriftSet;
 var size_and_type : Byte;
     size : Integer;
     type_ : TType;
@@ -776,7 +781,8 @@ begin
   then size := Integer( ReadVarint32);
 
   type_ := getTType( size_and_type);
-  result := TSetImpl.Create( type_, size);
+  Init( result, type_, size);
+  CheckReadBytesAvailable(result);
 end;
 
 
@@ -797,11 +803,8 @@ end;
 
 // Read a single byte off the wire. Nothing interesting here.
 function TCompactProtocolImpl.ReadByte: ShortInt;
-var data : TBytes;
 begin
-  SetLength( data, 1);
-  Transport.ReadAll( data, 0, 1);
-  result := data[0];
+  Transport.ReadAll( @result, SizeOf(result), 0, 1);
 end;
 
 
@@ -827,11 +830,11 @@ end;
 
 
 // No magic here - just Read a double off the wire.
-function TCompactProtocolImpl.ReadDouble:Double;
-var longBits : TBytes;
+function TCompactProtocolImpl.ReadDouble : Double;
+var longBits : TEightBytesArray;
 begin
-  SetLength( longBits, 8);
-  Transport.ReadAll( longBits, 0, 8);
+  ASSERT( SizeOf(longBits) = SizeOf(result));
+  Transport.ReadAll( @longBits[0], SizeOf(longBits), 0, SizeOf(longBits));
   result := Int64BitsToDouble( bytesToLong( longBits));
 end;
 
@@ -841,6 +844,7 @@ function TCompactProtocolImpl.ReadBinary: TBytes;
 var length : Integer;
 begin
   length := Integer( ReadVarint32);
+  FTrans.CheckReadBytesAvailable(length);
   SetLength( result, length);
   if (length > 0)
   then Transport.ReadAll( result, 0, length);
@@ -931,7 +935,7 @@ end;
 // Note that it's important that the mask bytes are Int64 literals,
 // otherwise they'll default to ints, and when you shift an Integer left 56 bits,
 // you just get a messed up Integer.
-class function TCompactProtocolImpl.bytesToLong( const bytes : TBytes) : Int64;
+class function TCompactProtocolImpl.bytesToLong( const bytes : TEightBytesArray) : Int64;
 begin
   ASSERT( Length(bytes) >= 8);
   result := (Int64(bytes[7] and $FF) shl 56) or
@@ -960,7 +964,7 @@ begin
   tct := Types( type_ and $0F);
   if tct in [Low(Types)..High(Types)]
   then result := tcompactTypeToType[tct]
-  else raise TProtocolException.Create('don''t know what type: '+IntToStr(Ord(tct)));
+  else raise TProtocolExceptionInvalidData.Create('don''t know what type: '+IntToStr(Ord(tct)));
 end;
 
 
@@ -969,8 +973,34 @@ class function TCompactProtocolImpl.getCompactType( const ttype : TType) : Byte;
 begin
   if ttype in VALID_TTYPES
   then result := Byte( ttypeToCompactType[ttype])
-  else raise TProtocolException.Create('don''t know what type: '+IntToStr(Ord(ttype)));
+  else raise TProtocolExceptionInvalidData.Create('don''t know what type: '+IntToStr(Ord(ttype)));
 end;
+
+
+function TCompactProtocolImpl.GetMinSerializedSize( const aType : TType) : Integer;
+// Return the minimum number of bytes a type will consume on the wire
+begin
+  case aType of
+    TType.Stop:    result := 0;
+    TType.Void:    result := 0;
+    TType.Bool_:   result := SizeOf(Byte);
+    TType.Byte_:   result := SizeOf(Byte);
+    TType.Double_: result := 8;  // uses fixedLongToBytes() which always writes 8 bytes
+    TType.I16:     result := SizeOf(Byte);
+    TType.I32:     result := SizeOf(Byte);
+    TType.I64:     result := SizeOf(Byte);
+    TType.String_: result := SizeOf(Byte);  // string length
+    TType.Struct:  result := 0;             // empty struct
+    TType.Map:     result := SizeOf(Byte);  // element count
+    TType.Set_:    result := SizeOf(Byte);  // element count
+    TType.List:    result := SizeOf(Byte);  // element count
+  else
+    raise TTransportExceptionBadArgs.Create('Unhandled type code');
+  end;
+end;
+
+
+
 
 
 //--- unit tests -------------------------------------------
@@ -1075,7 +1105,7 @@ end;
 procedure TestLongBytes;
 
   procedure Test( const test : Int64);
-  var buf : TBytes;
+  var buf : TCompactProtocolImpl.TEightBytesArray;
   begin
     TCompactProtocolImpl.fixedLongToBytes( test, buf);
     ASSERT( TCompactProtocolImpl.bytesToLong( buf) = test, IntToStr(test));
@@ -1094,11 +1124,29 @@ end;
 {$ENDIF}
 
 
+{$IFDEF Debug}
+procedure UnitTest;
+var w : WORD;
+const FPU_CW_DENORMALIZED = $0002;
+begin
+  w := Get8087CW;
+  try
+    Set8087CW( w or FPU_CW_DENORMALIZED);
+
+    TestDoubleToInt64Bits;
+    TestZigZag;
+    TestLongBytes;
+
+  finally
+    Set8087CW( w);
+  end;
+end;
+{$ENDIF}
+
+
 initialization
   {$IFDEF Debug}
-  TestDoubleToInt64Bits;
-  TestZigZag;
-  TestLongBytes;
+  UnitTest;
   {$ENDIF}
 
 end.

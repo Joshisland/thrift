@@ -97,7 +97,7 @@ d_main_modules = $(filter-out $(d_libevent_dependent_modules) \
 	$(d_openssl_dependent_modules),$(d_modules))
 
 
-d_lib_flags = -w -wi -Isrc -lib
+d_lib_flags = -w -wi -Isrc -lib -version=use_openssl_1_0_x
 all_targets =
 
 #
@@ -141,15 +141,19 @@ all-local: $(all_targets)
 install-exec-local:
 	$(INSTALL_PROGRAM) $(all_targets) $(DESTDIR)$(libdir)
 
-
 clean-local:
-	$(RM) -rf docs $(D_LIB_NAME) $(D_EVENT_LIB_NAME) $(D_SSL_LIB_NAME) unittest
+	$(RM) -r docs
+	$(RM) $(D_LIB_NAME)
+	$(RM) $(D_EVENT_LIB_NAME)
+	$(RM) $(D_SSL_LIB_NAME)
+	$(RM) -r test/gen-d
+	$(RM) -r unittest
 
 
 #
 # Unit tests (built both in debug and release mode).
 #
-d_test_flags = -unittest -w -wi -I$(top_srcdir)/lib/d/src
+d_test_flags = -unittest -w -wi -I$(top_srcdir)/lib/d/src -version=use_openssl_1_0_x
 
 # There just must be some way to reassign a variable without warnings in
 # Automake...
@@ -177,7 +181,7 @@ unittest/.directory:
 	touch $@
 
 unittest/debug/%: src/%.d $(all_targets) unittest/emptymain.d
-	$(DMD) -gc -of$(subst /,$(DMD_OF_DIRSEP),$@) $(d_test_flags) $^
+	$(DMD) -g -of$(subst /,$(DMD_OF_DIRSEP),$@) $(d_test_flags) $^
 
 unittest/release/%: src/%.d $(all_targets) unittest/emptymain.d
 	$(DMD) -O -release -of$(subst /,$(DMD_OF_DIRSEP),$@) $(d_test_flags) $^
@@ -185,6 +189,8 @@ unittest/release/%: src/%.d $(all_targets) unittest/emptymain.d
 TESTS = $(addprefix unittest/debug/, $(d_test_modules)) \
 	$(addprefix unittest/release/, $(d_test_modules))
 
+precross: all-local
+	$(MAKE) -C test precross
 
 EXTRA_DIST = \
 	src \

@@ -18,6 +18,12 @@
  */
 package org.apache.thrift.protocol;
 
+import java.nio.charset.StandardCharsets;
+
+import org.apache.thrift.TException;
+import org.apache.thrift.protocol.TJSONProtocol;
+import org.apache.thrift.transport.TMemoryBuffer;
+
 public class TestTJSONProtocol extends ProtocolTestBase {
   @Override
   protected TProtocolFactory getFactory() {
@@ -27,5 +33,30 @@ public class TestTJSONProtocol extends ProtocolTestBase {
   @Override
   protected boolean canBeUsedNaked() {
     return false;
+  }
+
+  public void testEscapedUnicode() throws TException {
+    String jsonString = "\"hello unicode \\u0e01\\ud834\\udd1e world\"";
+    String expectedString = "hello unicode \u0e01\ud834\udd1e world";
+
+    TMemoryBuffer buffer = new TMemoryBuffer(1000);
+    TJSONProtocol protocol = new TJSONProtocol(buffer);
+    buffer.write(jsonString.getBytes(StandardCharsets.UTF_8));
+
+    assertEquals(expectedString, protocol.readString());
+  }
+
+  public void testExactlySizedBuffer() throws TException {
+    // Regression test for https://issues.apache.org/jira/browse/THRIFT-5383.
+    // Ensures that a JSON string can be read after writing to a buffer just
+    // large enough to contain it.
+    String inputString = "abcdefg";
+    TMemoryBuffer buffer = new TMemoryBuffer(inputString.length() + 2);
+
+    TJSONProtocol protocol = new TJSONProtocol(buffer);
+    protocol.writeString(inputString);
+    String outputString = protocol.readString();
+
+    assertEquals(inputString, outputString);
   }
 }

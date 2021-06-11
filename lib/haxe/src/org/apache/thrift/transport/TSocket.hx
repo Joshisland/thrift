@@ -19,12 +19,12 @@
 
 package org.apache.thrift.transport;
 
-#if flash
+#if (cs || neko || cpp || java || macro || lua || php || python || hl)
+import sys.net.Socket;
+#elseif flash
 import flash.net.Socket;
 #elseif js
 import js.html.WebSocket;
-#else
-import haxe.remoting.SocketProtocol;
 #end
 
 import haxe.io.Bytes;
@@ -34,6 +34,7 @@ import haxe.io.BytesOutput;
 import haxe.io.Input;
 import haxe.io.Output;
 import haxe.io.Eof;
+import org.apache.thrift.TConfiguration;
 
 
 #if ! (flash || js)
@@ -46,7 +47,7 @@ import sys.net.Host;
    * Thrift Socket Server based implementations.
    */
 
-class TSocket extends TTransport  {
+class TSocket extends TEndpointTransport  {
 
     #if (flash || js)
     private var host  :  String;
@@ -73,13 +74,15 @@ class TSocket extends TTransport  {
     private var output : Output = null;
     #end
 
-    private static inline var DEFAULT_TIMEOUT = 5.0;
+    private var timeout : Float = 30;
 
     private var obuffer : BytesOutput = new BytesOutput();
     private var ioCallback : TException->Void = null;
     private var readCount : Int = 0;
 
-    public function new(host : String, port  :  Int)  :  Void  {
+    public function new(host : String, port :  Int, config : TConfiguration = null)  :  Void  {
+		super(config);
+
         #if (flash || js)
         this.host = host;
         #else
@@ -92,7 +95,8 @@ class TSocket extends TTransport  {
     #if ! (flash || js)
     // used by TSocketServer
     public static function fromSocket( socket : Socket) : TSocket  {
-        var result = new TSocket("",0);
+        var socketHost = socket.host();
+        var result = new TSocket(socketHost.host.toString(), socketHost.port);
         result.assignSocket(socket);
         return result;
     }
@@ -131,6 +135,7 @@ class TSocket extends TTransport  {
                 buf.addByte( input.readByte());
                 --remaining;
             }
+            CountConsumedMessageBytes(len);
             return len;
 
             #elseif js
@@ -143,6 +148,7 @@ class TSocket extends TTransport  {
                 buf.addByte( input.get(off+nr));
                 ++nr;
             }
+			CountConsumedMessageBytes(len);
             return len;
 
             #else
@@ -157,6 +163,7 @@ class TSocket extends TTransport  {
             var got = input.readBytes(data, 0, len);
             buf.addBytes( data, 0, got);
             readCount += got;
+			CountConsumedMessageBytes(got);
             return got;
 
             #end
@@ -222,6 +229,7 @@ class TSocket extends TTransport  {
         #end
 
         obuffer = new BytesOutput();
+		ResetConsumedMessageSize();
 
 
         ioCallback = callback;
@@ -240,7 +248,7 @@ class TSocket extends TTransport  {
         }
         catch (e : TException)
         {
-            trace('TException $e');
+            trace('TException $e, message : ${e.errorMsg}');
             if(ioCallback != null) {
                 ioCallback(e);
             }
@@ -261,7 +269,7 @@ class TSocket extends TTransport  {
     public override function open()  :  Void
     {
         #if js
-        var socket = new WebSocket();
+        var socket = new WebSocket(host);
         socket.onmessage = function( event : js.html.MessageEvent) {
             this.input = event.data;
         }
@@ -270,16 +278,23 @@ class TSocket extends TTransport  {
         var socket = new Socket();
         socket.connect(host, port);
 
+        #elseif php
+        var socket = new Socket();
+        socket.connect(host, port);
+        socket.setBlocking(true);
+        socket.setTimeout(timeout);
+
         #else
         var socket = new Socket();
         socket.setBlocking(true);
         socket.setFastSend(true);
-        socket.setTimeout( DEFAULT_TIMEOUT);
+        socket.setTimeout(timeout);
         socket.connect(host, port);
 
         #end
 
         assignSocket( socket);
+		ResetConsumedMessageSize();
     }
 
     #if js
@@ -300,5 +315,27 @@ class TSocket extends TTransport  {
 
         #end
     }
+
+	#if (flash)
+	
+    public function setTimeout( timeout : UInt) : Void {
+        if(isOpen()) {
+            socket.timeout = timeout;
+        }
+        this.timeout = timeout;
+    }
+
+	#else
+	
+    public function setTimeout( timeout : Float ) : Void {
+        if(isOpen()) {
+			#if ! (js)
+			socket.setTimeout(timeout);
+			#end
+        }
+        this.timeout = timeout;
+    }
+
+	#end
 
 }

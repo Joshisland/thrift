@@ -290,7 +290,7 @@ static void write_container(int ttype, VALUE field_info, VALUE value, VALUE prot
 
     if (TYPE(value) == T_ARRAY) {
       items = value;
-    } else {        
+    } else {
       if (rb_cSet == CLASS_OF(value)) {
         items = rb_funcall(value, entries_method_id, 0);
       } else {
@@ -670,6 +670,10 @@ static VALUE rb_thrift_union_write(VALUE self, VALUE protocol) {
 
   VALUE field_info = rb_hash_aref(struct_fields, field_id);
 
+  if(NIL_P(field_info)) {
+    rb_raise(rb_eRuntimeError, "set_field is not valid for this union!");
+  }
+
   VALUE ttype_value = rb_hash_aref(field_info, type_sym);
   int ttype = FIX2INT(ttype_value);
 
@@ -694,14 +698,23 @@ void Init_struct() {
   rb_define_method(struct_module, "read", rb_thrift_struct_read, 1);
 
   thrift_union_class = rb_const_get(thrift_module, rb_intern("Union"));
+  rb_global_variable(&thrift_union_class);
 
   rb_define_method(thrift_union_class, "write", rb_thrift_union_write, 1);
   rb_define_method(thrift_union_class, "read", rb_thrift_union_read, 1);
 
   setfield_id = rb_intern("@setfield");
+  rb_global_variable(&setfield_id);
+
   setvalue_id = rb_intern("@value");
+  rb_global_variable(&setvalue_id);
 
   to_s_method_id = rb_intern("to_s");
+  rb_global_variable(&to_s_method_id);
+
   name_to_id_method_id = rb_intern("name_to_id");
+  rb_global_variable(&name_to_id_method_id);
+
   sorted_field_ids_method_id = rb_intern("sorted_field_ids");
+  rb_global_variable(&sorted_field_ids_method_id);
 }

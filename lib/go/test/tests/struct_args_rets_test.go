@@ -20,7 +20,7 @@
 package tests
 
 import (
-	st "servicestest"
+	st "github.com/apache/thrift/lib/go/test/gopath/src/servicestest"
 )
 
 //this function is never called, it will fail to compile if check is failed
@@ -30,7 +30,7 @@ func staticCheckStructArgsResults() {
 	var iface st.AServ
 	var err error
 
-	sa, err = iface.StructAFunc_1structA(sa)
+	sa, err = iface.StructAFunc_1structA(defaultCtx, sa)
 	_ = err
 	_ = sa
 }

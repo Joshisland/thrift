@@ -20,12 +20,14 @@
 package tests
 
 import (
+	"context"
 	"fmt"
 	"net"
-	"onewaytest"
 	"testing"
-	"thrift"
 	"time"
+
+	"github.com/apache/thrift/lib/go/test/gopath/src/onewaytest"
+	"github.com/apache/thrift/lib/go/thrift"
 )
 
 func findPort() net.Addr {
@@ -39,9 +41,9 @@ func findPort() net.Addr {
 
 type impl struct{}
 
-func (i *impl) Hi(in int64, s string) (err error)        { fmt.Println("Hi!"); return }
-func (i *impl) Emptyfunc() (err error)                   { return }
-func (i *impl) EchoInt(param int64) (r int64, err error) { return param, nil }
+func (i *impl) Hi(ctx context.Context, in int64, s string) (err error)        { fmt.Println("Hi!"); return }
+func (i *impl) Emptyfunc(ctx context.Context) (err error)                     { return }
+func (i *impl) EchoInt(ctx context.Context, param int64) (r int64, err error) { return param, nil }
 
 const TIMEOUT = time.Second
 
@@ -60,12 +62,13 @@ func TestInitOneway(t *testing.T) {
 	server = thrift.NewTSimpleServer2(processor, serverTransport)
 
 	go server.Serve()
+	time.Sleep(10 * time.Millisecond)
 }
 
 func TestInitOnewayClient(t *testing.T) {
-	transport := thrift.NewTSocketFromAddrTimeout(addr, TIMEOUT)
+	transport := thrift.NewTSocketFromAddrTimeout(addr, TIMEOUT, TIMEOUT)
 	protocol := thrift.NewTBinaryProtocolTransport(transport)
-	client = onewaytest.NewOneWayClientProtocol(transport, protocol, protocol)
+	client = onewaytest.NewOneWayClient(thrift.NewTStandardClient(protocol, protocol))
 	err := transport.Open()
 	if err != nil {
 		t.Fatal("Unable to open client socket", err)
@@ -74,12 +77,12 @@ func TestInitOnewayClient(t *testing.T) {
 
 func TestCallOnewayServer(t *testing.T) {
 	//call oneway function
-	err := client.Hi(1, "")
+	err := client.Hi(defaultCtx, 1, "")
 	if err != nil {
 		t.Fatal("Unexpected error: ", err)
 	}
 	//There is no way to detect protocol problems with single oneway call so we call it second time
-	i, err := client.EchoInt(42)
+	i, err := client.EchoInt(defaultCtx, 42)
 	if err != nil {
 		t.Fatal("Unexpected error: ", err)
 	}

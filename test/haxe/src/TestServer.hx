@@ -39,11 +39,25 @@ class TestServer
             switch( args.transport) {
             case socket:
                 trace("- socket port "+args.port);
+				#if (flash || html5 || js)
+				throw "Transport not supported on this platform";
+                #else
                 transport = new TServerSocket( args.port);
+				#end
             case http:
                 trace("- http");
-                throw "HTTP server not implemented yet";
-                 //transport = new THttpServer( targetHost);
+                #if phpwebserver
+                transport = new TWrappingServerTransport( 
+					new TStreamTransport(
+						new TFileStream("php://input", Read),
+						new TFileStream("php://output", Append),
+						null
+					)
+				);
+                #else
+				throw "Transport not supported on this platform";
+                //transport = new THttpServer( targetHost);
+                #end
             default:
                 throw "Unhandled transport";
             }
@@ -76,7 +90,7 @@ class TestServer
 
 
             // Processor
-            var handler = new TestServerHandler();
+            var handler : ThriftTest_service = new TestServerHandler();
             var processor = new ThriftTestProcessor(handler);
 
             // Simple Server
@@ -84,7 +98,12 @@ class TestServer
             switch( args.servertype)
             {
             case simple:
-                server = new TSimpleServer( processor, transport, transfactory, protfactory);
+                var simpleServer = new TSimpleServer( processor, transport, transfactory, protfactory);
+                #if phpwebserver
+                simpleServer.runOnce = true;
+                #end
+                server = simpleServer;
+
             default:
                 throw "Unhandled server type";
             }
@@ -106,7 +125,7 @@ class TestServer
         }
         catch (x : TException)
         {
-			trace('$x ${x.errorID} ${x.errorMsg}');
+            trace('$x ${x.errorID} ${x.errorMsg}');
         }
         catch (x : Dynamic)
         {

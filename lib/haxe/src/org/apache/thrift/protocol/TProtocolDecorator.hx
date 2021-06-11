@@ -215,4 +215,18 @@ class TProtocolDecorator implements TProtocol
     public function readBinary() : Bytes {
         return wrapped.readBinary();
     }
+
+    public function IncrementRecursionDepth() : Void {
+        return wrapped.IncrementRecursionDepth();
+    }
+
+    public function DecrementRecursionDepth() : Void {
+        return wrapped.DecrementRecursionDepth();
+    }
+	
+	// Returns the minimum amount of bytes needed to store the smallest possible instance of TType.
+	public function GetMinSerializedSize(type : TType) : Int
+	{
+		return wrapped.GetMinSerializedSize(type);
+	}
 }

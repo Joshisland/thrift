@@ -27,17 +27,21 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.apache.thrift.TException;
 import org.apache.thrift.protocol.TProtocol;
 import org.apache.thrift.protocol.TProtocolFactory;
-import org.apache.thrift.transport.TFramedTransport;
+import org.apache.thrift.transport.layered.TFramedTransport;
 import org.apache.thrift.transport.TMemoryBuffer;
 import org.apache.thrift.transport.TNonblockingTransport;
 import org.apache.thrift.transport.TTransportException;
 
 /**
- * Encapsulates an async method call
+ * Encapsulates an async method call.
+ * <p>
  * Need to generate:
- *   - private void write_args(TProtocol protocol)
- *   - public T getResult() throws <Exception_1>, <Exception_2>, ...
- * @param <T>
+ * <ul>
+ *   <li>protected abstract void write_args(TProtocol protocol)</li>
+ *   <li>protected abstract T getResult() throws &lt;Exception_1&gt;, &lt;Exception_2&gt;, ...</li>
+ * </ul>
+ *
+ * @param <T> The return type of the encapsulated method call.
  */
 public abstract class TAsyncMethodCall<T> {
 
@@ -94,7 +98,7 @@ public abstract class TAsyncMethodCall<T> {
   protected long getStartTime() {
     return startTime;
   }
-  
+
   protected long getSequenceId() {
     return sequenceId;
   }
@@ -102,16 +106,18 @@ public abstract class TAsyncMethodCall<T> {
   public TAsyncClient getClient() {
     return client;
   }
-  
+
   public boolean hasTimeout() {
     return timeout > 0;
   }
-  
+
   public long getTimeoutTimestamp() {
     return timeout + startTime;
   }
 
   protected abstract void write_args(TProtocol protocol) throws TException;
+
+  protected abstract T getResult() throws Exception;
 
   /**
    * Initialize buffers.
@@ -167,7 +173,7 @@ public abstract class TAsyncMethodCall<T> {
    * select interests without worrying about concurrency.
    * @param key
    */
-  protected void transition(SelectionKey key) {
+  void transition(SelectionKey key) {
     // Ensure key is valid
     if (!key.isValid()) {
       key.cancel();
@@ -211,9 +217,9 @@ public abstract class TAsyncMethodCall<T> {
     state = State.ERROR;
   }
 
-  private void doReadingResponseBody(SelectionKey key) throws IOException {
+  private void doReadingResponseBody(SelectionKey key) throws TTransportException {
     if (transport.read(frameBuffer) < 0) {
-      throw new IOException("Read call frame failed");
+      throw new TTransportException(TTransportException.END_OF_FILE, "Read call frame failed");
     }
     if (frameBuffer.remaining() == 0) {
       cleanUpAndFireCallback(key);
@@ -225,13 +231,19 @@ public abstract class TAsyncMethodCall<T> {
     key.interestOps(0);
     // this ensures that the TAsyncMethod instance doesn't hang around
     key.attach(null);
-    client.onComplete();
-    callback.onComplete((T)this);
+    try {
+      T result = this.getResult();
+      client.onComplete();
+      callback.onComplete(result);
+    } catch (Exception e) {
+      key.cancel();
+      onError(e);
+    }
   }
 
-  private void doReadingResponseSize() throws IOException {
+  private void doReadingResponseSize() throws TTransportException {
     if (transport.read(sizeBuffer) < 0) {
-      throw new IOException("Read call frame size failed");
+      throw new TTransportException(TTransportException.END_OF_FILE, "Read call frame size failed");
     }
     if (sizeBuffer.remaining() == 0) {
       state = State.READING_RESPONSE_BODY;
@@ -239,9 +251,9 @@ public abstract class TAsyncMethodCall<T> {
     }
   }
 
-  private void doWritingRequestBody(SelectionKey key) throws IOException {
+  private void doWritingRequestBody(SelectionKey key) throws TTransportException {
     if (transport.write(frameBuffer) < 0) {
-      throw new IOException("Write call frame failed");
+      throw new TTransportException(TTransportException.END_OF_FILE, "Write call frame failed");
     }
     if (frameBuffer.remaining() == 0) {
       if (isOneway) {
@@ -254,9 +266,9 @@ public abstract class TAsyncMethodCall<T> {
     }
   }
 
-  private void doWritingRequestSize() throws IOException {
+  private void doWritingRequestSize() throws TTransportException {
     if (transport.write(sizeBuffer) < 0) {
-      throw new IOException("Write call frame size failed");
+      throw new TTransportException(TTransportException.END_OF_FILE, "Write call frame size failed");
     }
     if (sizeBuffer.remaining() == 0) {
       state = State.WRITING_REQUEST_BODY;
