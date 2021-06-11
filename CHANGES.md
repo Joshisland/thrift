@@ -1,10 +1,18 @@
 # Apache Thrift Changelog
 
-## 0.14.2
+## 0.15.0
 
-### Java
+### Breaking Changes
 
-- [THRIFT-5383](https://issues.apache.org/jira/browse/THRIFT-5383) - THRIFT-5383 TJSONProtocol Java readString throws on bounds check
+- [THRIFT-5229](https://issues.apache.org/jira/browse/THRIFT-5229) - ActionScript 3 support dropped
+- [THRIFT-5347](https://issues.apache.org/jira/browse/THRIFT-5347) - Haskell support dropped
+- [THRIFT-5381](https://issues.apache.org/jira/browse/THRIFT-5381) - possible collisions at VOID type with some 3rd-party libraries on Haxe cpp targets
+- [THRIFT-5396](https://issues.apache.org/jira/browse/THRIFT-5396) - deprecate netstd "Async" method postfix
+
+### Go
+
+- [THRIFT-5369](https://issues.apache.org/jira/browse/THRIFT-5369) - TConfiguration.GetMaxMessageSize() now also applies to container sizes in TProtocol implementations provided
+- [THRIFT-5404](https://issues.apache.org/jira/browse/THRIFT-5404) - TTransportException.Timeout would correctly return true when it's connect timeout during TSocket.Open call
 
 
 ## 0.14.1

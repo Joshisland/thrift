@@ -44,6 +44,13 @@
 //! | transport |
 //! +-----------+
 //! ```
+//!
+//! # Tutorial
+//!
+//! For an example of how to setup a simple client and server using this crate
+//! see the [tutorial].
+//!
+//! [tutorial]: https://github.com/apache/thrift/tree/master/tutorial/rs
 
 #![crate_type = "lib"]
 #![doc(test(attr(allow(unused_variables), deny(warnings))))]
@@ -80,4 +87,5 @@ pub use crate::autogen::*;
 pub type Result<T> = std::result::Result<T, self::Error>;
 
 // Re-export ordered-float, since it is used by the generator
-pub use ordered_float::OrderedFloat as OrderedFloat;
+// FIXME: check the guidance around type reexports
+pub use ordered_float::OrderedFloat;
