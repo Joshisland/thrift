@@ -42,7 +42,6 @@ set(testgencpp_SOURCES
     gen-cpp/Recursive_types.h
     gen-cpp/ThriftTest_types.cpp
     gen-cpp/ThriftTest_types.h
-    gen-cpp/OneWayTest_types.cpp
     gen-cpp/OneWayTest_types.h
     gen-cpp/OneWayService.cpp
     gen-cpp/OneWayService.h
@@ -82,6 +81,7 @@ set(UnitTest_SOURCES
     TypedefTest.cpp
     TServerSocketTest.cpp
     TServerTransportTest.cpp
+    ThrifttReadCheckTests.cpp
 )
 
 add_executable(UnitTests ${UnitTest_SOURCES})
@@ -334,6 +334,17 @@ target_link_libraries(SecurityTest -lrt)
 endif ()
 add_test(NAME SecurityTest COMMAND SecurityTest -- "${CMAKE_CURRENT_SOURCE_DIR}/../../../test/keys")
 
+add_executable(SecurityFromBufferTest SecurityFromBufferTest.cpp)
+target_link_libraries(SecurityFromBufferTest
+    testgencpp
+    ${Boost_LIBRARIES}
+)
+LINK_AGAINST_THRIFT_LIBRARY(SecurityFromBufferTest thrift)
+if (NOT MSVC AND NOT ${CMAKE_SYSTEM_NAME} MATCHES "Darwin" AND NOT MINGW)
+target_link_libraries(SecurityFromBufferTest -lrt)
+endif ()
+add_test(NAME SecurityFromBufferTest COMMAND SecurityFromBufferTest -- "${CMAKE_CURRENT_SOURCE_DIR}/../../../test/keys")
+
 endif()
 
 if(WITH_QT5)
@@ -381,7 +392,7 @@ add_custom_command(OUTPUT gen-cpp/SecondService.cpp gen-cpp/ThriftTest_constants
     COMMAND ${THRIFT_COMPILER} --gen cpp ${PROJECT_SOURCE_DIR}/test/ThriftTest.thrift
 )
 
-add_custom_command(OUTPUT gen-cpp/OneWayService.cpp gen-cpp/OneWayTest_constants.cpp gen-cpp/OneWayTest_types.h gen-cpp/OneWayService.h gen-cpp/OneWayTest_constants.h gen-cpp/OneWayTest_types.cpp
+add_custom_command(OUTPUT gen-cpp/OneWayService.cpp gen-cpp/OneWayTest_types.h gen-cpp/OneWayService.h
     COMMAND ${THRIFT_COMPILER} --gen cpp ${CMAKE_CURRENT_SOURCE_DIR}/OneWayTest.thrift
 )
 
