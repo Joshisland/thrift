@@ -28,6 +28,8 @@
 #include <algorithm>
 #include <iostream>
 
+#include <thrift/TApplicationException.h>
+
 #ifdef HAVE_POLL_H
 #include <poll.h>
 #elif HAVE_SYS_POLL_H
@@ -294,7 +296,8 @@ public:
     if (!notifyIOThread()) {
       server_->decrementActiveProcessors();
       close();
-      throw TException("TConnection::forceClose: failed write on notify pipe");
+      GlobalOutput.printf("[ERROR] TConnection::forceClose: failed write on notify pipe, closing.");
+      //throw TException("TConnection::forceClose: failed write on notify pipe");
     }
   }
 
@@ -635,6 +638,34 @@ void TNonblockingServer::TConnection::transition() {
         GlobalOutput.printf("[ERROR] TimedOutException: Server::process() %s", to.what());
         server_->decrementActiveProcessors();
         close();
+      } catch (TooManyPendingTasksException &so) {
+
+        std::string fname("TooManyPendingTasksException");
+        int32_t seqid=0;
+
+        try {
+            protocol::TProtocol* inRaw = inputProtocol_.get();
+
+            protocol::TMessageType mtype;
+            inRaw->readMessageBegin(fname, mtype, seqid);
+        } catch(const std::exception& e) {
+          GlobalOutput.printf("[ERROR] server_->addTask() TooManyPendingTasksException raised an exception: %s", e.what());
+        }
+        ::apache::thrift::TApplicationException x("TooManyPendingTasksException");
+        outputProtocol_->writeMessageBegin(fname, ::apache::thrift::protocol::T_EXCEPTION, seqid);
+        x.write(outputProtocol_.get());
+        outputProtocol_->writeMessageEnd();
+        outputProtocol_->getTransport()->writeEnd();
+        outputProtocol_->getTransport()->flush();
+        GlobalOutput.printf("[ERROR] TooManyPendingTasksException: Server::process() %s", so.what());
+        if (!notifyIOThread()) {
+          GlobalOutput.printf("[ERROR] server_->addTask(): failed to notifyIOThread, closing.");
+          close();
+        }
+      } catch(const std::exception& e) {
+        GlobalOutput.printf("[ERROR] server_->addTask() raised an exception: %s", e.what());
+      } catch(...) {
+        GlobalOutput.printf("[ERROR] server_->addTask() raised an unknown exception");
       }
 
       return;
@@ -1072,6 +1103,7 @@ bool TNonblockingServer::drainPendingTask() {
 
 void TNonblockingServer::expireClose(std::shared_ptr<Runnable> task) {
   TConnection* connection = static_cast<TConnection::Task*>(task.get())->getTConnection();
+  GlobalOutput.printf("expireClose %p, %p, %d", connection, connection->getServer(), connection->getState());
   assert(connection && connection->getServer() && connection->getState() == APP_WAIT_TASK);
   connection->forceClose();
 }
