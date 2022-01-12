@@ -666,8 +666,12 @@ void TNonblockingServer::TConnection::transition() {
         return;
       } catch(const std::exception& e) {
         GlobalOutput.printf("[ERROR] server_->addTask() raised an exception: %s", e.what());
+        server_->decrementActiveProcessors();
+        close();
       } catch(...) {
         GlobalOutput.printf("[ERROR] server_->addTask() raised an unknown exception");
+        server_->decrementActiveProcessors();
+        close();
       }
 
       return;
