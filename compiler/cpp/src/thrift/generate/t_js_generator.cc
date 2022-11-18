@@ -131,6 +131,7 @@ public:
 
   void init_generator() override;
   void close_generator() override;
+  std::string display_name() const override;
 
   /**
    * Program-level generation functions
@@ -151,6 +152,7 @@ public:
   /**
    * Structs!
    */
+
   void generate_js_struct(t_struct* tstruct, bool is_exception);
   void generate_js_struct_definition(std::ostream& out,
                                      t_struct* tstruct,
@@ -163,6 +165,7 @@ public:
   /**
    * Service-level generation functions
    */
+
   void generate_service_helpers(t_service* tservice);
   void generate_service_interface(t_service* tservice);
   void generate_service_rest(t_service* tservice);
@@ -229,6 +232,7 @@ public:
   /**
    * Helper parser functions
    */
+
   void parse_imports(t_program* program, const std::string& imports_string);
   void parse_thrift_package_output_directory(const std::string& thrift_package_output_directory);
 
@@ -910,7 +914,14 @@ void t_js_generator::generate_js_struct_definition(ostream& out,
     }
     if (gen_ts_) {
       string ts_access = gen_node_ ? "public " : "";
-      f_types_ts_ << ts_indent() << ts_access << (*m_iter)->get_name() << ts_get_req(*m_iter) << ": "
+      string member_name = (*m_iter)->get_name();
+
+      // Special case. Exceptions derive from Error, and error has a non optional message field.
+      // Ignore the optional flag in this case, otherwise we will generate a incompatible field
+      // in the eyes of typescript. 
+      string optional_flag = is_exception && member_name == "message" ? "" : ts_get_req(*m_iter);
+ 
+      f_types_ts_ << ts_indent() << ts_access << member_name << optional_flag << ": "
                   << ts_get_type((*m_iter)->get_type()) << ";" << endl;
     }
   }
@@ -2690,6 +2701,8 @@ string t_js_generator::type_to_enum(t_type* type) {
       return "Thrift.Type.I64";
     case t_base_type::TYPE_DOUBLE:
       return "Thrift.Type.DOUBLE";
+    default:
+      throw "compiler error: unhandled type";
     }
   } else if (type->is_enum()) {
     return "Thrift.Type.I32";
@@ -2738,6 +2751,9 @@ string t_js_generator::ts_get_type(t_type* type) {
       break;
     case t_base_type::TYPE_VOID:
       ts_type = "void";
+      break;
+    default:
+      throw "compiler error: unhandled type";
     }
   } else if (type->is_enum() || type->is_struct() || type->is_xception()) {
     std::string type_name;
@@ -2802,8 +2818,16 @@ std::string t_js_generator::ts_function_signature(t_function* tfunction, bool in
 
   str = tfunction->get_name() + "(";
 
+  bool has_written_optional = false;
+
   for (f_iter = fields.begin(); f_iter != fields.end(); ++f_iter) {
-    str += (*f_iter)->get_name() + ts_get_req(*f_iter) + ": " + ts_get_type((*f_iter)->get_type());
+    // Ensure that non optional parameters do not follow optional parameters
+    // E.g. public foo(a: string, b?: string; c: string) is invalid, c must be optional, or b non-optional
+    string original_optional = ts_get_req(*f_iter);
+    string optional = has_written_optional ? "?" : original_optional;
+    has_written_optional = has_written_optional || optional.size() > 0;
+
+    str += (*f_iter)->get_name() + optional + ": " + ts_get_type((*f_iter)->get_type());
 
     if (f_iter + 1 != fields.end() || (include_callback && fields.size() > 0)) {
       str += ", ";
@@ -2976,6 +3000,11 @@ std::string t_js_generator::next_identifier_name(const std::vector<t_field*>& fi
 
   return current_name;
 }
+
+std::string t_js_generator::display_name() const {
+  return "Javascript";
+}
+
 
 THRIFT_REGISTER_GENERATOR(js,
                           "Javascript",

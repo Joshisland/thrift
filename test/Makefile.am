@@ -92,6 +92,11 @@ SUBDIRS += rs
 PRECROSS_TARGET += precross-rs
 endif
 
+if WITH_SWIFT
+SUBDIRS += swift
+PRECROSS_TARGET += precross-swift
+endif
+
 #
 # generate html for ThriftTest.thrift AND validate it!
 #
@@ -133,11 +138,14 @@ EXTRA_DIST = \
 	py.twisted \
 	rb \
 	rs \
+	swift \
 	threads \
+	partial \
 	AnnotationTest.thrift \
 	BrokenConstants.thrift \
 	ConstantsDemo.thrift \
 	DebugProtoTest.thrift \
+	v0.16/DebugProtoTest.thrift \
 	DenseLinkingTest.thrift \
 	DocTest.thrift \
 	DoubleConstantsTest.thrift \
@@ -147,10 +155,6 @@ EXTRA_DIST = \
 	Include.thrift \
 	Identifiers.thrift \
 	Int64Test.thrift \
-	JavaBeansTest.thrift \
-	JavaBinaryDefault.thrift \
-	JavaDeepCopyTest.thrift \
-	JavaTypes.thrift \
 	JsDeepConstructorTest.thrift \
 	ManyOptionals.thrift \
 	ManyTypedefs.thrift \
@@ -161,11 +165,15 @@ EXTRA_DIST = \
 	SmallTest.thrift \
 	StressTest.thrift \
 	ThriftTest.thrift \
+	v0.16/ThriftTest.thrift \
 	TypedefTest.thrift \
 	Types.thrift \
 	UnsafeTypes.thrift \
 	Service.thrift \
 	SpecificNameTest.thrift \
+	VoidMethExceptionsTest.thrift \
+	partial/thrift_test_schema.thrift \
+	keys/keygen/.gitignore \
 	known_failures_Linux.json \
 	test.py \
 	tests.json \

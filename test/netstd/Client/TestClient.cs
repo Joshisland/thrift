@@ -407,19 +407,32 @@ namespace ThriftTest
                 {
                     Console.WriteLine("*** FAILED ***");
                     Console.WriteLine("Error while parsing arguments");
-                    Console.WriteLine(ex.Message + "\n" + ex.StackTrace);
+                    Console.WriteLine("{0} {1}\nStack:\n{2}", ex.GetType().Name, ex.Message, ex.StackTrace);
                     return ErrorUnknown;
                 }
 
-                var tests = Enumerable.Range(0, param.numThreads).Select(_ => new ClientTest(param)).ToArray();
-
                 //issue tests on separate threads simultaneously
+                var nThreads = Math.Max(param.numThreads, 1);
+                Console.Write("Starting {0} test thread(s) ", nThreads);
+                var tasks = new Task[nThreads];
                 var start = DateTime.Now;
-                var tasks = tests.Select(test => test.Execute()).ToArray();
+                var retcode = 0;
+                for (var i = 0; i < tasks.Length; ++i)
+                {
+                    Console.Write('.');
+                    tasks[i] = Task.Run(async () =>
+                    {
+                        var test = new ClientTest(param);
+                        await test.Execute();
+                        lock (tasks)
+                            retcode |= test.ReturnCode;
+                    });
+                }
+                Console.WriteLine(" OK");
                 Task.WaitAll(tasks);
                 Console.WriteLine("Total time: " + (DateTime.Now - start));
                 Console.WriteLine();
-                return tests.Select(t => t.ReturnCode).Aggregate((r1, r2) => r1 | r2);
+                return retcode;
             }
             catch (Exception outerEx)
             {
@@ -490,7 +503,7 @@ namespace ThriftTest
             return retval;
         }
 
-        private static CancellationToken MakeTimeoutToken(int msec = 5000)
+        private static CancellationToken MakeTimeoutToken(int msec = 15_000)
         {
             var token = new CancellationTokenSource(msec);
             return token.Token;
@@ -575,8 +588,28 @@ namespace ThriftTest
                 returnCode |= ErrorBaseTypes;
             }
 
+            // testUuid()
+            var uuidOut = new Guid("{00112233-4455-6677-8899-AABBCCDDEEFF}");
+            Console.Write("testUuid({0})", uuidOut);
+            try
+            {
+                var uuidIn = await client.testUuid(uuidOut, MakeTimeoutToken());
+                Console.WriteLine(" = {0}", uuidIn);
+                if (!uuidIn.Equals(uuidOut))
+                {
+                    Console.WriteLine("*** FAILED ***");
+                    returnCode |= ErrorBaseTypes;
+                }
+            }
+            catch (Thrift.TApplicationException ex)
+            {
+                Console.WriteLine("*** FAILED ***");
+                returnCode |= ErrorBaseTypes;
+                Console.WriteLine(ex.Message + "\n" + ex.StackTrace);
+            }
+
             // testBinary()
-            foreach(BinaryTestSize binTestCase in Enum.GetValues(typeof(BinaryTestSize)))
+            foreach (BinaryTestSize binTestCase in Enum.GetValues(typeof(BinaryTestSize)))
             {
                 var binOut = PrepareTestData(true, binTestCase);
 
@@ -644,9 +677,14 @@ namespace ThriftTest
                 Struct_thing = o,
                 I32_thing = 5
             };
-            var i2 = await client.testNest(o2, MakeTimeoutToken());
+            Xtruct2 i2 = await client.testNest(o2, MakeTimeoutToken());
             i = i2.Struct_thing;
-            Console.WriteLine(" = {" + i2.Byte_thing + ", {\"" + i.String_thing + "\", " + i.Byte_thing + ", " + i.I32_thing + ", " + i.I64_thing + "}, " + i2.I32_thing + "}");
+            Console.WriteLine(" = {" + i2.Byte_thing + ", {\""
+                            + (i?.String_thing ?? "<null>") + "\", "
+                            + (i?.Byte_thing ?? 0) + ", "
+                            + (i?.I32_thing ?? 0) + ", "
+                            + (i?.I64_thing ?? 0) + "}, "
+                            + i2.I32_thing + "}");
 
             var mapout = new Dictionary<int, int>();
             for (var j = 0; j < 5; j++)
@@ -681,7 +719,7 @@ namespace ThriftTest
 
             //set
             // TODO: Validate received message
-            var setout = new THashSet<int>();
+            var setout = new HashSet<int>();
             for (var j = -2; j < 3; j++)
             {
                 setout.Add(j);
@@ -937,7 +975,7 @@ namespace ThriftTest
             }
             catch (Xception2 ex)
             {
-                if (ex.ErrorCode != 2002 || ex.Struct_thing.String_thing != "This is an Xception2")
+                if (ex.ErrorCode != 2002 || ex.Struct_thing?.String_thing != "This is an Xception2")
                 {
                     Console.WriteLine("*** FAILED ***");
                     returnCode |= ErrorExceptions;

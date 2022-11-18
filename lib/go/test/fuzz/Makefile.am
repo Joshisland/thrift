@@ -24,8 +24,13 @@ gopathfuzz: $(THRIFT) fuzz.go
 	touch gopathfuzz
 
 check: gopathfuzz
-	go test -mod=mod -tags gofuzz
+	go test -tags gofuzz
 
 clean-local:
 	$(RM) -r gopathfuzz gen-go
 
+EXTRA_DIST = \
+	fuzz.go \
+	fuzz_test.go \
+	go.mod \
+	go.sum

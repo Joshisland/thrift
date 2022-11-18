@@ -18,6 +18,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
 using Thrift.Protocol;
 
@@ -47,15 +48,15 @@ namespace Thrift.Protocol
                     if (first_child)
                         first_child = false;
                     else
-                        sb.Append(",");
+                        sb.Append(',');
 
                     sb.Append("{ ");
                     pair.Key.ToString(sb);
                     sb.Append(", ");
                     pair.Value.ToString(sb);
-                    sb.Append("}");
+                    sb.Append('}');
                 }
-                sb.Append("}");
+                sb.Append('}');
             }
             else if (self is IEnumerable)
             {
@@ -65,15 +66,19 @@ namespace Thrift.Protocol
                     elm.ToString(sb, first_child);
                     first_child = false;
                 }
-                sb.Append("}");
+                sb.Append('}');
             }
             else if (self is TBase)
             {
                 sb.Append((self as TBase).ToString());
             }
+            else if (self is double)
+            {
+                sb.Append(((double)self).ToString(CultureInfo.InvariantCulture));
+            }
             else
             {
-                sb.Append(self != null?  self.ToString() : "<null>");
+                sb.Append(self != null ? self.ToString() : "<null>");
             }
         }
     }
