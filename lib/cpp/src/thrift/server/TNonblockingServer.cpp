@@ -296,8 +296,7 @@ public:
     if (!notifyIOThread()) {
       server_->decrementActiveProcessors();
       close();
-      GlobalOutput.printf("[ERROR] TConnection::forceClose: failed write on notify pipe, closing.");
-      //throw TException("TConnection::forceClose: failed write on notify pipe");
+      throw TException("TConnection::forceClose: failed write on notify pipe");
     }
   }
 
@@ -492,6 +491,8 @@ void TNonblockingServer::TConnection::workSocket() {
           continue;
       }
 
+      return;
+
     case SOCKET_RECV:
       // It is an error to be in this state if we already have all the data
       if (!(readBufferPos_ < readWant_)) {
@@ -549,25 +550,14 @@ void TNonblockingServer::TConnection::workSocket() {
         return;
       }
 
-<<<<<<< HEAD
-    try {
-      left = writeBufferSize_ - writeBufferPos_;
-      sent = tSocket_->write_partial(writeBuffer_ + writeBufferPos_, left);
-    } catch (TTransportException& te) {
-      GlobalOutput.printf("TConnection::workSocket()::SOCKET_SEND: %s ", te.what());
-      close();
-      return;
-    }
-=======
       try {
         left = writeBufferSize_ - writeBufferPos_;
         sent = tSocket_->write_partial(writeBuffer_ + writeBufferPos_, left);
       } catch (TTransportException& te) {
-        GlobalOutput.printf("TConnection::workSocket(): %s ", te.what());
+        GlobalOutput.printf("TConnection::workSocket()::SOCKET_SEND: %s ", te.what());
         close();
         return;
       }
->>>>>>> up-master
 
       writeBufferPos_ += sent;
 
@@ -809,10 +799,7 @@ void TNonblockingServer::TConnection::transition() {
       auto* newBuffer = (uint8_t*)std::realloc(readBuffer_, newSize);
       if (newBuffer == nullptr) {
         // nothing else to be done...
-        GlobalOutput.printf("server::transition() ERROR: failed to realloc size(%s)", newSize);
-        close();
-        return;
-        //throw std::bad_alloc();
+        throw std::bad_alloc();
       }
       readBuffer_ = newBuffer;
       readBufferSize_ = newSize;
