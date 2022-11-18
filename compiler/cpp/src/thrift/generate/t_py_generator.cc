@@ -448,12 +448,12 @@ string t_py_generator::render_includes() {
   string result = "";
   for (auto include : includes) {
     if (!gen_relative_imports_){
-      result += "import " + get_real_py_module(includes[i], gen_twisted_, package_prefix_) + ".ttypes\n";
+      result += "import " + get_real_py_module(include, gen_twisted_, package_prefix_) + ".ttypes\n";
     }
     else{
       // from ...package.name import ttypes as package_name_ttypes
-      result += "from " + get_real_py_module_rel(includes[i], gen_twisted_, package_prefix_) + 
-          " import ttypes as " + get_real_py_module_as(includes[i], gen_twisted_, package_prefix_) + "_ttypes\n";
+      result += "from " + get_real_py_module_rel(include, gen_twisted_, package_prefix_) + 
+          " import ttypes as " + get_real_py_module_as(include, gen_twisted_, package_prefix_) + "_ttypes\n";
     }
   }
   return result;
