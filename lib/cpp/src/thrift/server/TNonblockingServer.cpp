@@ -296,6 +296,7 @@ public:
     if (!notifyIOThread()) {
       server_->decrementActiveProcessors();
       close();
+      GlobalOutput.printf("[ERROR] TConnection::forceClose: failed write on notify pipe, closing.")
       throw TException("TConnection::forceClose: failed write on notify pipe");
     }
   }
@@ -799,6 +800,7 @@ void TNonblockingServer::TConnection::transition() {
       auto* newBuffer = (uint8_t*)std::realloc(readBuffer_, newSize);
       if (newBuffer == nullptr) {
         // nothing else to be done...
+        GlobalOutput.printf("server::transition() ERROR: failed to realloc size(%s)", newSize);
         throw std::bad_alloc();
       }
       readBuffer_ = newBuffer;
